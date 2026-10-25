@@ -36,6 +36,7 @@ export default function ReadingStatsTracker({ bookKey }: { bookKey: string }) {
   const { user } = useAuth();
   const coreRef = useRef(new TrackerCore(DEFAULT_STATS_TRACKING_CONFIG));
   const dbRef = useRef<StatisticsDb | null>(null);
+  const dbOpenRef = useRef<Promise<StatisticsDb> | null>(null);
   const idleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -95,8 +96,10 @@ export default function ReadingStatsTracker({ bookKey }: { bookKey: string }) {
   useEffect(() => {
     if (!appService) return;
     let cancelled = false;
+    const opening = StatisticsDb.open(appService);
+    dbOpenRef.current = opening;
     runBestEffort(
-      StatisticsDb.open(appService).then((db) => {
+      opening.then((db) => {
         if (cancelled) return;
         dbRef.current = db;
         if (syncEnabled()) runBestEffort(pullStats(db, new SyncClient()));
@@ -112,7 +115,9 @@ export default function ReadingStatsTracker({ bookKey }: { bookKey: string }) {
   const persist = (events: FlushedEvent[]): Promise<void> => {
     if (events.length === 0) return writeQueueRef.current;
     const write = writeQueueRef.current.then(async () => {
-      const db = dbRef.current;
+      // A page can be closed while the shared statistics DB is still opening.
+      // Keep the final event queued until that open settles instead of dropping it.
+      const db = dbRef.current ?? (dbOpenRef.current ? await dbOpenRef.current : null);
       const { bookMd5: md5, title: bookTitle, authors: bookAuthors } = bookRef.current;
       if (!db || !md5) return;
       try {
@@ -217,8 +222,9 @@ export default function ReadingStatsTracker({ bookKey }: { bookKey: string }) {
       if (idleRef.current) clearTimeout(idleRef.current);
       if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
       runBestEffort(
-        persist(coreRef.current.onClose(nowSec())).then(() => {
-          if (dbRef.current) pushToAllTargets(dbRef.current);
+        persist(coreRef.current.onClose(nowSec())).then(async () => {
+          const db = dbRef.current ?? (dbOpenRef.current ? await dbOpenRef.current : null);
+          if (db) pushToAllTargets(db);
           return undefined;
         }),
       );

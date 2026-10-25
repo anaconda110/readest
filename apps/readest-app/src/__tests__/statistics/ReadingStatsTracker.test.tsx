@@ -316,4 +316,31 @@ describe('ReadingStatsTracker visibility and write failures', () => {
     });
     expect(mocks.db.insertPageEvent).toHaveBeenCalledTimes(2);
   });
+
+  it('flushes the final page event after a slow database open', async () => {
+    let resolveOpen!: (db: typeof mocks.db) => void;
+    const pendingOpen = new Promise<typeof mocks.db>((resolve) => {
+      resolveOpen = resolve;
+    });
+    mocks.open.mockReturnValueOnce(pendingOpen);
+
+    const { unmount } = render(<ReadingStatsTracker bookKey={BOOK_KEY} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    unmount();
+
+    expect(mocks.db.insertPageEvent).not.toHaveBeenCalled();
+    await act(async () => {
+      resolveOpen(mocks.db);
+      await pendingOpen;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.db.insertPageEvent).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ page: 1, duration: 30 }),
+    );
+  });
 });
