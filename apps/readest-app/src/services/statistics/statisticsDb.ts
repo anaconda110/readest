@@ -33,6 +33,13 @@ interface QuarterRow extends DatabaseRow {
   duration: number;
 }
 
+interface ReadingIntervalRow extends DatabaseRow {
+  id_book: number;
+  page: number;
+  start_time: number;
+  duration: number;
+}
+
 export interface DailyReadingSeconds {
   date: string;
   seconds: number;
@@ -68,6 +75,11 @@ export interface ReadingPeriodStats {
   daily: DailyReadingSeconds[];
 }
 
+export interface ReadingTotalsAndDaily {
+  daily: DailyReadingSeconds[];
+  totals: { seconds: number; books: number; pages: number };
+}
+
 interface PageEventSnapshot extends DatabaseRow {
   id_book: number;
   page: number;
@@ -98,6 +110,12 @@ const splitIntervalByLocalDay = (startTime: number, endTime: number) => {
 };
 
 const compareText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+const toDailyRows = (totals: Map<string, number>): DailyReadingSeconds[] =>
+  [...totals]
+    .filter(([, seconds]) => seconds > 0)
+    .sort(([a], [b]) => compareText(a, b))
+    .map(([date, seconds]) => ({ date, seconds }));
 
 // Readest caps one page visit at this, so a longer event spans several pages
 // (a CrossPoint session recorded in whole percents) and says nothing about pace.
@@ -316,6 +334,24 @@ export class StatisticsDb {
     return rows[0] ?? { seconds: 0, books: 0, pages: 0 };
   }
 
+  private async getOverlappingIntervals(start: number, end: number): Promise<ReadingIntervalRow[]> {
+    if (end <= start) return [];
+    const rows = await this.db.select<ReadingIntervalRow>(
+      `SELECT id_book, page, start_time, duration
+       FROM page_stat_data
+       WHERE start_time < ? AND start_time + duration > ?
+       ORDER BY start_time, id_book, page`,
+      [end, start],
+    );
+    return rows.map((row) => ({
+      ...row,
+      id_book: Number(row.id_book),
+      page: Number(row.page),
+      start_time: Number(row.start_time),
+      duration: Number(row.duration),
+    }));
+  }
+
   private async getOverlappingEvents(start: number, end: number): Promise<ReadingEventRow[]> {
     if (end <= start) return [];
     const rows = await this.db.select<ReadingEventRow>(
@@ -387,10 +423,7 @@ export class StatisticsDb {
       }
     }
 
-    const daily = [...dailySeconds]
-      .filter(([, seconds]) => seconds > 0)
-      .sort(([a], [b]) => compareText(a, b))
-      .map(([date, seconds]) => ({ date, seconds }));
+    const daily = toDailyRows(dailySeconds);
     const rankings = [...byBook.values()].sort(
       (a, b) =>
         b.seconds - a.seconds || compareText(a.title, b.title) || compareText(a.bookMd5, b.bookMd5),
@@ -413,9 +446,40 @@ export class StatisticsDb {
     return { summary, rankings, breakdown, daily };
   }
 
+  /**
+   * All-time dashboard data in one lightweight event scan. Daily rows need JS
+   * local-midnight splitting, so this reuses that pass for the totals instead
+   * of issuing a second full-table aggregate.
+   */
+  async getReadingTotalsAndDaily(start: number, end: number): Promise<ReadingTotalsAndDaily> {
+    const events = await this.getOverlappingIntervals(start, end);
+    const dailySeconds = new Map<string, number>();
+    const books = new Set<number>();
+    const pages = new Set<string>();
+    for (const event of events) {
+      const clippedStart = Math.max(start, event.start_time);
+      const clippedEnd = Math.min(end, event.start_time + event.duration);
+      if (clippedEnd <= clippedStart) continue;
+      books.add(event.id_book);
+      pages.add(`${event.id_book}:${event.page}`);
+      for (const segment of splitIntervalByLocalDay(clippedStart, clippedEnd)) {
+        dailySeconds.set(segment.date, (dailySeconds.get(segment.date) ?? 0) + segment.seconds);
+      }
+    }
+    const daily = toDailyRows(dailySeconds);
+    return {
+      daily,
+      totals: {
+        seconds: daily.reduce((total, row) => total + row.seconds, 0),
+        books: books.size,
+        pages: pages.size,
+      },
+    };
+  }
+
   /** Seconds read on each local natural day within [start, end), clipped at both ends. */
   async getDailyReadingSeconds(start: number, end: number): Promise<DailyReadingSeconds[]> {
-    const events = await this.getOverlappingEvents(start, end);
+    const events = await this.getOverlappingIntervals(start, end);
     const totals = new Map<string, number>();
     for (const event of events) {
       const clippedStart = Math.max(start, event.start_time);
@@ -424,10 +488,7 @@ export class StatisticsDb {
         totals.set(segment.date, (totals.get(segment.date) ?? 0) + segment.seconds);
       }
     }
-    return [...totals]
-      .filter(([, seconds]) => seconds > 0)
-      .sort(([a], [b]) => compareText(a, b))
-      .map(([date, seconds]) => ({ date, seconds }));
+    return toDailyRows(totals);
   }
 
   async getReadingSummary(start: number, end: number): Promise<ReadingSummary> {

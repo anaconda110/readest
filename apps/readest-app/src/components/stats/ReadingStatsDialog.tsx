@@ -135,10 +135,7 @@ const ReadingStatsContent: React.FC = () => {
 
     const load = async (db: StatisticsDb): Promise<AllTimeStats> => {
       const allTimeEnd = Math.floor(Date.now() / 1000) + 86400;
-      const [dailyRows, totals] = await Promise.all([
-        db.getDailyReadingSeconds(0, allTimeEnd),
-        db.getReadingTotals(),
-      ]);
+      const { daily: dailyRows, totals } = await db.getReadingTotalsAndDaily(0, allTimeEnd);
       return { daily: toDailyMap(dailyRows), totals };
     };
 

@@ -6,9 +6,8 @@ import ReadingTimeChart from '@/components/stats/ReadingTimeChart';
 const env = vi.hoisted(() => ({ appService: {}, envConfig: {} }));
 const db = vi.hoisted(() => ({
   open: vi.fn(),
-  getDailyReadingSeconds: vi.fn(),
   getReadingPeriodStats: vi.fn(),
-  getReadingTotals: vi.fn(),
+  getReadingTotalsAndDaily: vi.fn(),
   deleteBookRange: vi.fn(),
   undoDelete: vi.fn(),
 }));
@@ -32,14 +31,16 @@ beforeEach(() => {
   vi.resetAllMocks();
   sync.user = null;
   db.open.mockResolvedValue(db);
-  db.getDailyReadingSeconds.mockResolvedValue([]);
   db.getReadingPeriodStats.mockResolvedValue({
     summary: { seconds: 0, days: 0, books: 0, pages: 0 },
     rankings: [],
     breakdown: [],
     daily: [],
   });
-  db.getReadingTotals.mockResolvedValue({ seconds: 0, books: 0, pages: 0 });
+  db.getReadingTotalsAndDaily.mockResolvedValue({
+    daily: [],
+    totals: { seconds: 0, books: 0, pages: 0 },
+  });
   db.deleteBookRange.mockResolvedValue({
     bookMd5: 'book-a',
     originalEvents: [],
@@ -156,7 +157,10 @@ describe('ReadingStatsDialog', () => {
   };
 
   it('formats all-time counts with the app locale', async () => {
-    db.getReadingTotals.mockResolvedValue({ seconds: 0, books: 1234, pages: 56789 });
+    db.getReadingTotalsAndDaily.mockResolvedValue({
+      daily: [],
+      totals: { seconds: 0, books: 1234, pages: 56789 },
+    });
     await openDialog();
     expect(await screen.findByText('56.789')).toBeTruthy();
     expect(screen.getByText('1.234')).toBeTruthy();
@@ -168,12 +172,17 @@ describe('ReadingStatsDialog', () => {
     sync.pullStats.mockImplementation(async () => {
       pulled = true;
     });
-    db.getReadingTotals
-      .mockResolvedValueOnce({ seconds: 0, books: 3, pages: 0 })
-      .mockImplementation(async () => ({ seconds: 0, books: pulled ? 40 : 3, pages: 0 }));
+    db.getReadingTotalsAndDaily
+      .mockResolvedValueOnce({ daily: [], totals: { seconds: 0, books: 3, pages: 0 } })
+      .mockImplementation(async () => ({
+        daily: [],
+        totals: { seconds: 0, books: pulled ? 40 : 3, pages: 0 },
+      }));
     await openDialog();
     expect(sync.pullStats).toHaveBeenCalled();
-    await waitFor(() => expect(db.getReadingTotals).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    await waitFor(() => expect(db.getReadingTotalsAndDaily).toHaveBeenCalledTimes(2), {
+      timeout: 3000,
+    });
     expect(await screen.findByText('40', {}, { timeout: 3000 })).toBeTruthy();
   });
 
@@ -205,14 +214,12 @@ describe('ReadingStatsDialog', () => {
     vi.useFakeTimers({ now: new Date('2026-10-21T12:00:00'), toFake: ['Date'] });
     await openDialog();
     expect(await screen.findByText('No reading activity in this period')).toBeTruthy();
-    expect(db.getDailyReadingSeconds).toHaveBeenCalledTimes(1);
-    expect(db.getReadingTotals).toHaveBeenCalledTimes(1);
+    expect(db.getReadingTotalsAndDaily).toHaveBeenCalledTimes(1);
     expect(db.getReadingPeriodStats).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'Previous Period' }));
     await waitFor(() => expect(db.getReadingPeriodStats).toHaveBeenCalledTimes(2));
-    expect(db.getDailyReadingSeconds).toHaveBeenCalledTimes(1);
-    expect(db.getReadingTotals).toHaveBeenCalledTimes(1);
+    expect(db.getReadingTotalsAndDaily).toHaveBeenCalledTimes(1);
   });
 
   it('does not show the previous period data while the new period loads', async () => {
@@ -392,13 +399,11 @@ describe('ReadingStatsDialog', () => {
     expect(
       await screen.findByText('Deleted locally. A later sync may restore this data.'),
     ).toBeTruthy();
-    await waitFor(() => expect(db.getReadingTotals).toHaveBeenCalledTimes(2));
-    expect(db.getDailyReadingSeconds).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(db.getReadingTotalsAndDaily).toHaveBeenCalledTimes(2));
 
     fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
     expect(db.undoDelete).toHaveBeenCalledWith(deleted);
     expect(await screen.findByText('Deletion undone')).toBeTruthy();
-    await waitFor(() => expect(db.getReadingTotals).toHaveBeenCalledTimes(3));
-    expect(db.getDailyReadingSeconds).toHaveBeenCalledTimes(3);
+    await waitFor(() => expect(db.getReadingTotalsAndDaily).toHaveBeenCalledTimes(3));
   });
 });
