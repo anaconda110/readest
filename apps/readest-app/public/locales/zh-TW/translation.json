@@ -871,6 +871,8 @@
   "Connection failed": "連線失敗",
   "AI Assistant": "AI 助手",
   "Enable AI Assistant": "啟用 AI 助手",
+  "Expand AI panel": "展開 AI 分析面板",
+  "Collapse AI panel": "收起 AI 分析面板",
   "Provider": "提供者",
   "Ollama (Local)": "Ollama（本機）",
   "AI Gateway (Cloud)": "AI 閘道（雲端）",

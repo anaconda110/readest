@@ -5,6 +5,7 @@ const h = vi.hoisted(() => ({
   isMobile: false,
   resize: null as null | ((width: string) => void),
   settings: {
+    aiSettings: { enabled: true },
     globalReadSettings: {
       notebookWidth: '30%',
       isNotebookPinned: false,
@@ -102,6 +103,7 @@ describe('Notebook resizing', () => {
   beforeEach(() => {
     h.resize = null;
     h.isMobile = false;
+    h.settings.aiSettings.enabled = true;
     h.settings.globalReadSettings.notebookWidth = '30%';
     useNotebookStore.setState({
       notebookWidth: '',
@@ -138,5 +140,35 @@ describe('Notebook resizing', () => {
 
     expect(screen.getByRole('group', { name: 'Notebook' })).toBeTruthy();
     expect(useNotebookStore.getState().notebookWidth).toBe('35%');
+  });
+
+  test('opens the AI tab from the desktop rail and closes it again', () => {
+    render(<Notebook />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand AI panel' }));
+
+    expect(useNotebookStore.getState().isNotebookVisible).toBe(true);
+    expect(useNotebookStore.getState().notebookActiveTab).toBe('ai');
+    expect(screen.getByRole('group', { name: 'Notebook' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse AI panel' }));
+
+    expect(flushNotebookDocument).toHaveBeenCalledWith('book-1');
+    expect(useNotebookStore.getState().isNotebookVisible).toBe(false);
+    expect(screen.queryByRole('group', { name: 'Notebook' })).toBeNull();
+  });
+
+  test('keeps the AI rail out of the mobile layout', () => {
+    h.isMobile = true;
+    render(<Notebook />);
+
+    expect(screen.queryByRole('button', { name: 'Expand AI panel' })).toBeNull();
+  });
+
+  test('does not render the AI rail when the assistant is disabled', () => {
+    h.settings.aiSettings.enabled = false;
+    render(<Notebook />);
+
+    expect(screen.queryByRole('button', { name: 'Expand AI panel' })).toBeNull();
   });
 });

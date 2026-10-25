@@ -26,6 +26,7 @@ import {
 } from '../../hooks/useNotebookDocumentCoordinator';
 import AIAssistant from './AIAssistant';
 import NotebookHeader from './Header';
+import NotebookAIRail from './NotebookAIRail';
 import NotebookEditor from './NotebookEditor';
 import NotebookTabNavigation from './NotebookTabNavigation';
 
@@ -134,6 +135,15 @@ const Notebook: React.FC = () => {
     });
   };
 
+  const handleToggleAIRail = () => {
+    if (isNotebookVisible) {
+      hideNotebook();
+      return;
+    }
+    handleTabChange('ai');
+    setNotebookVisible(true);
+  };
+
   const handleOpenAnnotations = () => {
     if (!sideBarBookKey) return;
     setSearchBarVisible(false);
@@ -181,8 +191,21 @@ const Notebook: React.FC = () => {
   const viewSettings = getViewSettings(sideBarBookKey);
   if (!bookData?.bookDoc) return null;
   const languageDir = getBookDirFromLanguage(bookData.bookDoc.metadata.language);
+  const aiEnabled = settings?.aiSettings?.enabled ?? false;
+  const showAIRail = !isMobile && aiEnabled && (!isNotebookVisible || notebookActiveTab === 'ai');
 
-  return isNotebookVisible ? (
+  const aiRail = showAIRail ? (
+    <NotebookAIRail
+      expanded={isNotebookVisible}
+      variant={isNotebookVisible ? 'attached' : 'floating'}
+      onToggle={handleToggleAIRail}
+      style={isNotebookVisible ? undefined : { right: safeAreaInsets?.right || 0 }}
+    />
+  ) : null;
+
+  if (!isNotebookVisible) return aiRail;
+
+  return (
     <>
       {!isNotebookPinned && (
         <Overlay
@@ -192,6 +215,7 @@ const Notebook: React.FC = () => {
       )}
       <div
         ref={notebookRef}
+        id='notebook-panel'
         className={clsx(
           'notebook-container right-0 flex min-w-60 select-none flex-col',
           'full-height font-sans text-base font-normal transition-[padding-top] duration-300 sm:text-sm',
@@ -227,6 +251,7 @@ const Notebook: React.FC = () => {
             }
           }
         `}</style>
+        {aiRail}
         <div
           className={clsx(
             'drag-bar absolute -left-2 top-0 h-full w-0.5 cursor-col-resize bg-transparent p-2',
@@ -283,7 +308,7 @@ const Notebook: React.FC = () => {
         </div>
       </div>
     </>
-  ) : null;
+  );
 };
 
 export default Notebook;
