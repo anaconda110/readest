@@ -1,27 +1,39 @@
 import clsx from 'clsx';
 import React, { useRef, useState } from 'react';
-import SegmentedControl from '@/components/SegmentedControl';
 import { useTranslation } from '@/hooks/useTranslation';
-import { getReadingBars, type ReadingRange } from '@/services/statistics/readingStats';
+import {
+  getPeriodBounds,
+  getReadingBars,
+  toDateKey,
+  type ReadingRange,
+} from '@/services/statistics/readingStats';
 import { formatDuration } from '@/utils/duration';
 import { getLocale } from '@/utils/misc';
 
 interface ReadingTimeChartProps {
   daily: Map<string, number>;
+  range: ReadingRange;
+  anchorDate?: Date;
 }
 
-const ReadingTimeChart: React.FC<ReadingTimeChartProps> = ({ daily }) => {
+const ReadingTimeChart: React.FC<ReadingTimeChartProps> = ({
+  daily,
+  range,
+  anchorDate = new Date(),
+}) => {
   const _ = useTranslation();
-  const [range, setRange] = useState<ReadingRange>('week');
   const [selected, setSelected] = useState<number | null>(null);
   const pointerFocus = useRef(false);
 
   const locale = getLocale();
-  const bars = getReadingBars(daily, range);
+  const bars = getReadingBars(daily, range, anchorDate);
+  const bounds = getPeriodBounds(range, anchorDate);
   const total = bars.reduce((sum, bar) => sum + bar.seconds, 0);
   const max = Math.max(...bars.map((bar) => bar.seconds), 60);
-  const today = new Date();
-  const days = Math.round((today.getTime() - bars[0]!.date.getTime()) / 86400000) + 1;
+  const days =
+    range === 'year'
+      ? Math.round((bounds.end.getTime() - bounds.start.getTime()) / 86400000)
+      : bars.length;
   const time = (seconds: number) => formatDuration(Math.floor(seconds / 60), _);
 
   const formatBarDate = (date: Date) =>
@@ -32,8 +44,7 @@ const ReadingTimeChart: React.FC<ReadingTimeChartProps> = ({ daily }) => {
   const formatAxisLabel = (date: Date, index: number) => {
     if (range === 'week') return date.toLocaleDateString(locale, { weekday: 'narrow' });
     if (range === 'year') return date.toLocaleDateString(locale, { month: 'narrow' });
-    // Label every 7th day counting back from today, so today is always labeled.
-    return (bars.length - 1 - index) % 7 === 0 ? String(date.getDate()) : '';
+    return index === 0 || date.getDate() % 7 === 1 ? String(date.getDate()) : '';
   };
 
   const bar = selected !== null ? bars[selected] : undefined;
@@ -61,26 +72,19 @@ const ReadingTimeChart: React.FC<ReadingTimeChartProps> = ({ daily }) => {
   };
 
   const handleFocus = () => {
-    if (!pointerFocus.current) setSelected((current) => current ?? bars.length - 1);
+    if (!pointerFocus.current) {
+      setSelected((current) => {
+        if (current !== null) return current;
+        const todayKey = toDateKey(new Date());
+        const todayIndex = bars.findIndex((item) => toDateKey(item.date) === todayKey);
+        return todayIndex >= 0 ? todayIndex : bars.length - 1;
+      });
+    }
     pointerFocus.current = false;
   };
 
   return (
     <div className='flex flex-col gap-4'>
-      <SegmentedControl<ReadingRange>
-        fullWidth
-        ariaLabel={_('Time Range')}
-        options={[
-          { value: 'week', label: _('Week') },
-          { value: 'month', label: _('Month') },
-          { value: 'year', label: _('Year') },
-        ]}
-        value={range}
-        onChange={(value) => {
-          setRange(value);
-          setSelected(null);
-        }}
-      />
       <div role='status'>
         <div className='text-2xl font-semibold tabular-nums'>{time(bar ? bar.seconds : total)}</div>
         <div className='text-base-content/70 text-[0.85em]'>

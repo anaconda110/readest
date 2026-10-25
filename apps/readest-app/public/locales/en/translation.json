@@ -232,5 +232,18 @@
   "Clear Model Cache": "Clear Model Cache",
   "Cached model files can be downloaded again when they are next needed.": "Cached model files can be downloaded again when they are next needed.",
   "Clear cache": "Clear cache",
-  "Clearing...": "Clearing..."
+  "Clearing...": "Clearing...",
+  "Previous Period": "Previous Period",
+  "Next Period": "Next Period",
+  "Period Summary": "Period Summary",
+  "Reading Days": "Reading Days",
+  "Book Ranking": "Book Ranking",
+  "Daily Details": "Daily Details",
+  "No reading activity in this period": "No reading activity in this period",
+  "Delete {{title}} on {{date}}": "Delete {{title}} on {{date}}",
+  "Deleted locally. A later sync may restore this data.": "Deleted locally. A later sync may restore this data.",
+  "Deletion undone": "Deletion undone",
+  "Failed to update reading data": "Failed to update reading data",
+  "{{count}} pages_one": "{{count}} page",
+  "{{count}} pages_other": "{{count}} pages"
 }

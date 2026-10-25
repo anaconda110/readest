@@ -1,11 +1,18 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ReadingHeatmap from '@/components/stats/ReadingHeatmap';
 import ReadingTimeChart from '@/components/stats/ReadingTimeChart';
 
 const env = vi.hoisted(() => ({ appService: {}, envConfig: {} }));
 const db = vi.hoisted(() => ({
   open: vi.fn(),
+  getDailyReadingSeconds: vi.fn(),
+  getReadingSummary: vi.fn(),
+  getBookReadingRankings: vi.fn(),
+  getDailyBookBreakdown: vi.fn(),
+  getReadingTotals: vi.fn(),
+  deleteBookRange: vi.fn(),
+  undoDelete: vi.fn(),
 }));
 vi.mock('@/context/EnvContext', () => ({ useEnv: () => env }));
 vi.mock('@/hooks/useTranslation', () => ({
@@ -22,6 +29,23 @@ vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: sync.user }) }
 vi.mock('@/services/sync/syncCategories', () => ({ isSyncCategoryEnabled: () => true }));
 vi.mock('@/services/statistics/statsSync', () => ({ pullStats: sync.pullStats }));
 vi.mock('@/libs/sync', () => ({ SyncClient: class {} }));
+
+beforeEach(() => {
+  vi.resetAllMocks();
+  sync.user = null;
+  db.open.mockResolvedValue(db);
+  db.getDailyReadingSeconds.mockResolvedValue([]);
+  db.getReadingSummary.mockResolvedValue({ seconds: 0, days: 0, books: 0, pages: 0 });
+  db.getBookReadingRankings.mockResolvedValue([]);
+  db.getDailyBookBreakdown.mockResolvedValue([]);
+  db.getReadingTotals.mockResolvedValue({ seconds: 0, books: 0, pages: 0 });
+  db.deleteBookRange.mockResolvedValue({
+    bookMd5: 'book-a',
+    originalEvents: [],
+    replacementEvents: [],
+  });
+  db.undoDelete.mockResolvedValue(undefined);
+});
 
 afterEach(() => {
   cleanup();
@@ -48,7 +72,7 @@ describe('ReadingHeatmap keyboard access', () => {
 describe('ReadingTimeChart keyboard access', () => {
   it('is one tab stop whose arrow keys step through the bars', () => {
     vi.useFakeTimers({ now: new Date('2026-10-21T12:00:00'), toFake: ['Date'] });
-    render(<ReadingTimeChart daily={new Map([['2026-10-20', 1800]])} />);
+    render(<ReadingTimeChart daily={new Map([['2026-10-20', 1800]])} range='week' />);
     const chart = screen.getByRole('group', { name: 'Reading Time' });
     expect(chart.querySelectorAll('button')).toHaveLength(0);
     const status = screen.getByRole('status');
@@ -67,14 +91,14 @@ describe('pointer behavior', () => {
     const daily = new Map([['2026-10-20', 1800]]);
     const { container } = render(
       <>
-        <ReadingTimeChart daily={daily} />
+        <ReadingTimeChart daily={daily} range='week' />
         <ReadingHeatmap daily={daily} />
       </>,
     );
     const [chartStatus, heatmapStatus] = screen.getAllByRole('status');
     const chartBefore = chartStatus!.textContent;
     const heatmapBefore = heatmapStatus!.textContent;
-    const bar = container.querySelector('[data-index="5"]')!;
+    const bar = container.querySelector('[data-index="1"]')!;
     const day = container.querySelector('[data-date="2026-10-20"]')!;
 
     fireEvent.mouseOver(bar);
@@ -104,7 +128,7 @@ describe('arrow keys inside a Dialog', () => {
     vi.useFakeTimers({ now: new Date('2026-10-21T12:00:00'), toFake: ['Date'] });
     render(
       <InDialog>
-        <ReadingTimeChart daily={new Map()} />
+        <ReadingTimeChart daily={new Map()} range='week' />
         <ReadingHeatmap daily={new Map()} />
       </InDialog>,
     );
@@ -131,29 +155,25 @@ describe('ReadingStatsDialog', () => {
   };
 
   it('formats all-time counts with the app locale', async () => {
-    db.open.mockResolvedValue({
-      getQuarterHourDurations: async () => [],
-      getReadingTotals: async () => ({ seconds: 0, books: 1234, pages: 56789 }),
-    });
+    db.getReadingTotals.mockResolvedValue({ seconds: 0, books: 1234, pages: 56789 });
     await openDialog();
     expect(await screen.findByText('56.789')).toBeTruthy();
     expect(screen.getByText('1.234')).toBeTruthy();
   });
 
   it("pulls the account's stats from other devices, then shows them", async () => {
-    let pulled = false;
     sync.user = { id: 'u' };
+    let pulled = false;
     sync.pullStats.mockImplementation(async () => {
       pulled = true;
     });
-    db.open.mockResolvedValue({
-      getQuarterHourDurations: async () => [],
-      getReadingTotals: async () => ({ seconds: 0, books: pulled ? 40 : 3, pages: 0 }),
-    });
+    db.getReadingTotals
+      .mockResolvedValueOnce({ seconds: 0, books: 3, pages: 0 })
+      .mockImplementation(async () => ({ seconds: 0, books: pulled ? 40 : 3, pages: 0 }));
     await openDialog();
     expect(sync.pullStats).toHaveBeenCalled();
-    expect(await screen.findByText('40')).toBeTruthy();
-    sync.user = null;
+    await waitFor(() => expect(db.getReadingTotals).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    expect(await screen.findByText('40', {}, { timeout: 3000 })).toBeTruthy();
   });
 
   it('says so when the statistics fail to load', async () => {
@@ -161,5 +181,131 @@ describe('ReadingStatsDialog', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     await openDialog();
     expect(await screen.findByText('Failed to load reading statistics')).toBeTruthy();
+  });
+
+  it('loads the current natural week and can navigate to the previous week', async () => {
+    vi.useFakeTimers({ now: new Date('2026-10-21T12:00:00'), toFake: ['Date'] });
+    await openDialog();
+
+    const thisWeekStart = new Date(2026, 9, 19).getTime() / 1000;
+    const nextWeekStart = new Date(2026, 9, 26).getTime() / 1000;
+    expect(db.getReadingSummary).toHaveBeenCalledWith(thisWeekStart, nextWeekStart);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous Period' }));
+    await waitFor(() =>
+      expect(db.getReadingSummary).toHaveBeenCalledWith(
+        new Date(2026, 9, 12).getTime() / 1000,
+        thisWeekStart,
+      ),
+    );
+  });
+
+  it('does not show the previous period data while the new period loads', async () => {
+    vi.useFakeTimers({ now: new Date('2026-10-21T12:00:00'), toFake: ['Date'] });
+    let resolveSummary!: (summary: {
+      seconds: number;
+      days: number;
+      books: number;
+      pages: number;
+    }) => void;
+    const pendingSummary = new Promise<{
+      seconds: number;
+      days: number;
+      books: number;
+      pages: number;
+    }>((resolve) => (resolveSummary = resolve));
+    db.getReadingSummary
+      .mockResolvedValueOnce({ seconds: 3600, days: 1, books: 1, pages: 1 })
+      .mockImplementationOnce(() => pendingSummary);
+
+    await openDialog();
+    expect((await screen.findAllByText('1h')).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous Period' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(db.getReadingSummary).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText('1h')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Previous Period' })).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toContain('Loading...');
+
+    await act(async () => {
+      resolveSummary({ seconds: 0, days: 0, books: 0, pages: 0 });
+      await pendingSummary;
+    });
+  });
+
+  it('shows the period summary, book ranking, and daily book breakdown', async () => {
+    vi.useFakeTimers({ now: new Date('2026-10-21T12:00:00'), toFake: ['Date'] });
+    db.getReadingSummary.mockResolvedValue({ seconds: 5400, days: 2, books: 2, pages: 25 });
+    db.getBookReadingRankings.mockResolvedValue([
+      {
+        bookMd5: 'book-a',
+        title: 'Book A',
+        authors: 'Author A',
+        seconds: 3600,
+      },
+    ]);
+    db.getDailyBookBreakdown.mockResolvedValue([
+      {
+        date: '2026-10-20',
+        bookMd5: 'book-a',
+        title: 'Book A',
+        authors: 'Author A',
+        seconds: 3600,
+        pages: 20,
+      },
+    ]);
+    await openDialog();
+
+    expect(await screen.findByText('Period Summary')).toBeTruthy();
+    expect(screen.getByText('Book Ranking')).toBeTruthy();
+    expect(screen.getByText('Daily Details')).toBeTruthy();
+    expect(screen.getAllByText('1h').length).toBeGreaterThan(0);
+    expect(screen.getByText('20 pages')).toBeTruthy();
+  });
+
+  it('shows an explicit empty state for a period without reading', async () => {
+    await openDialog();
+    expect(await screen.findByText('No reading activity in this period')).toBeTruthy();
+  });
+
+  it('deletes a daily book entry and can undo the local deletion', async () => {
+    vi.useFakeTimers({ now: new Date('2026-10-21T12:00:00'), toFake: ['Date'] });
+    const deleted = {
+      bookMd5: 'book-a',
+      originalEvents: [],
+      replacementEvents: [],
+    };
+    db.getDailyBookBreakdown
+      .mockResolvedValueOnce([
+        {
+          date: '2026-10-20',
+          bookMd5: 'book-a',
+          title: 'Book A',
+          authors: 'Author A',
+          seconds: 3600,
+          pages: 20,
+        },
+      ])
+      .mockResolvedValue([]);
+    db.getReadingSummary.mockResolvedValue({ seconds: 3600, days: 1, books: 1, pages: 20 });
+    db.deleteBookRange.mockResolvedValue(deleted);
+    await openDialog();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Delete Book A/ }));
+    expect(db.deleteBookRange).toHaveBeenCalledWith(
+      'book-a',
+      new Date(2026, 9, 20).getTime() / 1000,
+      new Date(2026, 9, 21).getTime() / 1000,
+    );
+    expect(
+      await screen.findByText('Deleted locally. A later sync may restore this data.'),
+    ).toBeTruthy();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+    expect(db.undoDelete).toHaveBeenCalledWith(deleted);
+    expect(await screen.findByText('Deletion undone')).toBeTruthy();
   });
 });

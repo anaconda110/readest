@@ -2,6 +2,7 @@ import type { AppService } from '@/types/system';
 import type { DatabaseService, DatabaseRow } from '@/types/database';
 import { DEFAULT_STATS_TRACKING_CONFIG } from '@/types/statistics';
 import type { PageStatEvent, StatBook } from '@/types/statistics';
+import { toDateKey } from './readingStats';
 
 interface BookRow extends DatabaseRow {
   id: number;
@@ -15,6 +16,81 @@ interface BookRow extends DatabaseRow {
 }
 
 type CursorKey = 'push' | 'pull' | 'bookorbit-push';
+
+interface ReadingEventRow extends DatabaseRow {
+  id_book: number;
+  page: number;
+  start_time: number;
+  duration: number;
+  total_pages: number;
+  md5: string;
+  title: string;
+  authors: string;
+}
+
+interface QuarterRow extends DatabaseRow {
+  start_time: number;
+  duration: number;
+}
+
+export interface DailyReadingSeconds {
+  date: string;
+  seconds: number;
+}
+
+export interface ReadingSummary {
+  seconds: number;
+  days: number;
+  books: number;
+  pages: number;
+}
+
+export interface BookReadingRanking {
+  bookMd5: string;
+  title: string;
+  authors: string;
+  seconds: number;
+}
+
+export interface DailyBookBreakdown {
+  date: string;
+  bookMd5: string;
+  title: string;
+  authors: string;
+  seconds: number;
+  pages: number;
+}
+
+interface PageEventSnapshot extends DatabaseRow {
+  id_book: number;
+  page: number;
+  start_time: number;
+  duration: number;
+  total_pages: number;
+}
+
+export interface DeletedBookRange {
+  bookMd5: string;
+  originalEvents: PageEventSnapshot[];
+  replacementEvents: PageEventSnapshot[];
+}
+
+/** Split a clipped interval at local midnight without relying on SQLite's timezone. */
+const splitIntervalByLocalDay = (startTime: number, endTime: number) => {
+  const segments: { date: string; seconds: number }[] = [];
+  let cursor = startTime;
+  while (cursor < endTime) {
+    const day = new Date(cursor * 1000);
+    const nextMidnight = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1);
+    const segmentEnd = Math.min(endTime, nextMidnight.getTime() / 1000);
+    if (segmentEnd <= cursor) break;
+    segments.push({ date: toDateKey(day), seconds: segmentEnd - cursor });
+    cursor = segmentEnd;
+  }
+  return segments;
+};
+
+const compareText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 // Readest caps one page visit at this, so a longer event spans several pages
 // (a CrossPoint session recorded in whole percents) and says nothing about pace.
@@ -204,10 +280,23 @@ export class StatisticsDb {
    * instead of trusting SQL `localtime` to know the host's time zone.
    */
   async getQuarterHourDurations(): Promise<{ quarter: number; seconds: number }[]> {
-    return this.db.select<{ quarter: number; seconds: number }>(
-      `SELECT start_time / 900 AS quarter, SUM(duration) AS seconds
-       FROM page_stat_data GROUP BY quarter ORDER BY quarter`,
+    const rows = await this.db.select<QuarterRow>(
+      `SELECT start_time, duration FROM page_stat_data WHERE duration > 0 ORDER BY start_time`,
     );
+    const totals = new Map<number, number>();
+    for (const row of rows) {
+      let cursor = Number(row.start_time);
+      const end = cursor + Number(row.duration);
+      while (cursor < end) {
+        const quarter = Math.floor(cursor / 900);
+        const segmentEnd = Math.min(end, (quarter + 1) * 900);
+        totals.set(quarter, (totals.get(quarter) ?? 0) + segmentEnd - cursor);
+        cursor = segmentEnd;
+      }
+    }
+    return [...totals]
+      .sort(([a], [b]) => a - b)
+      .map(([quarter, seconds]) => ({ quarter, seconds }));
   }
 
   async getReadingTotals(): Promise<{ seconds: number; books: number; pages: number }> {
@@ -218,6 +307,233 @@ export class StatisticsDb {
        FROM page_stat_data`,
     );
     return rows[0] ?? { seconds: 0, books: 0, pages: 0 };
+  }
+
+  private async getOverlappingEvents(start: number, end: number): Promise<ReadingEventRow[]> {
+    if (end <= start) return [];
+    const rows = await this.db.select<ReadingEventRow>(
+      `SELECT p.id_book, p.page, p.start_time, p.duration, p.total_pages,
+              b.md5, b.title, b.authors
+       FROM page_stat_data p JOIN book b ON b.id = p.id_book
+       WHERE p.start_time < ? AND p.start_time + p.duration > ?
+       ORDER BY p.start_time, b.md5, p.page`,
+      [end, start],
+    );
+    return rows.map((row) => ({
+      ...row,
+      id_book: Number(row.id_book),
+      page: Number(row.page),
+      start_time: Number(row.start_time),
+      duration: Number(row.duration),
+      total_pages: Number(row.total_pages),
+      md5: String(row.md5),
+      title: String(row.title),
+      authors: String(row.authors),
+    }));
+  }
+
+  /** Seconds read on each local natural day within [start, end), clipped at both ends. */
+  async getDailyReadingSeconds(start: number, end: number): Promise<DailyReadingSeconds[]> {
+    const events = await this.getOverlappingEvents(start, end);
+    const totals = new Map<string, number>();
+    for (const event of events) {
+      const clippedStart = Math.max(start, event.start_time);
+      const clippedEnd = Math.min(end, event.start_time + event.duration);
+      for (const segment of splitIntervalByLocalDay(clippedStart, clippedEnd)) {
+        totals.set(segment.date, (totals.get(segment.date) ?? 0) + segment.seconds);
+      }
+    }
+    return [...totals]
+      .filter(([, seconds]) => seconds > 0)
+      .sort(([a], [b]) => compareText(a, b))
+      .map(([date, seconds]) => ({ date, seconds }));
+  }
+
+  async getReadingSummary(start: number, end: number): Promise<ReadingSummary> {
+    const events = await this.getOverlappingEvents(start, end);
+    const days = new Set<string>();
+    const books = new Set<string>();
+    const pages = new Set<string>();
+    let seconds = 0;
+    for (const event of events) {
+      const clippedStart = Math.max(start, event.start_time);
+      const clippedEnd = Math.min(end, event.start_time + event.duration);
+      if (clippedEnd <= clippedStart) continue;
+      for (const segment of splitIntervalByLocalDay(clippedStart, clippedEnd)) {
+        days.add(segment.date);
+        seconds += segment.seconds;
+      }
+      books.add(event.md5);
+      pages.add(`${event.id_book}:${event.page}`);
+    }
+    return { seconds, days: days.size, books: books.size, pages: pages.size };
+  }
+
+  async getBookReadingRankings(start: number, end: number): Promise<BookReadingRanking[]> {
+    const events = await this.getOverlappingEvents(start, end);
+    const byBook = new Map<string, BookReadingRanking>();
+    for (const event of events) {
+      const clippedStart = Math.max(start, event.start_time);
+      const clippedEnd = Math.min(end, event.start_time + event.duration);
+      if (clippedEnd <= clippedStart) continue;
+      const existing = byBook.get(event.md5) ?? {
+        bookMd5: event.md5,
+        title: event.title,
+        authors: event.authors,
+        seconds: 0,
+      };
+      existing.seconds += clippedEnd - clippedStart;
+      byBook.set(event.md5, existing);
+    }
+    return [...byBook.values()].sort(
+      (a, b) =>
+        b.seconds - a.seconds || compareText(a.title, b.title) || compareText(a.bookMd5, b.bookMd5),
+    );
+  }
+
+  async getDailyBookBreakdown(start: number, end: number): Promise<DailyBookBreakdown[]> {
+    const events = await this.getOverlappingEvents(start, end);
+    const groups = new Map<string, DailyBookBreakdown & { pageKeys: Set<string> }>();
+    for (const event of events) {
+      const clippedStart = Math.max(start, event.start_time);
+      const clippedEnd = Math.min(end, event.start_time + event.duration);
+      if (clippedEnd <= clippedStart) continue;
+      for (const segment of splitIntervalByLocalDay(clippedStart, clippedEnd)) {
+        const key = `${segment.date}\u0000${event.md5}`;
+        const existing = groups.get(key) ?? {
+          date: segment.date,
+          bookMd5: event.md5,
+          title: event.title,
+          authors: event.authors,
+          seconds: 0,
+          pages: 0,
+          pageKeys: new Set<string>(),
+        };
+        existing.seconds += segment.seconds;
+        existing.pageKeys.add(`${event.id_book}:${event.page}`);
+        existing.pages = existing.pageKeys.size;
+        groups.set(key, existing);
+      }
+    }
+    return [...groups.values()]
+      .map(({ pageKeys: _pageKeys, ...row }) => row)
+      .sort(
+        (a, b) =>
+          compareText(a.date, b.date) ||
+          b.seconds - a.seconds ||
+          compareText(a.title, b.title) ||
+          compareText(a.bookMd5, b.bookMd5),
+      );
+  }
+
+  /**
+   * Delete one book's events inside [start, end), clipping events that cross a
+   * boundary. The original rows are returned for a local-only undo.
+   */
+  async deleteBookRange(bookMd5: string, start: number, end: number): Promise<DeletedBookRange> {
+    const deleted: DeletedBookRange = {
+      bookMd5,
+      originalEvents: [],
+      replacementEvents: [],
+    };
+    if (end <= start) return deleted;
+    const book = await this.db.select<BookRow>(`SELECT id FROM book WHERE md5 = ? LIMIT 1`, [
+      bookMd5,
+    ]);
+    const idBook = book[0]?.id;
+    if (idBook === undefined) return deleted;
+
+    await this.db.execute('BEGIN');
+    try {
+      const rows = await this.db.select<PageEventSnapshot>(
+        `SELECT id_book, page, start_time, duration, total_pages
+         FROM page_stat_data
+         WHERE id_book = ? AND start_time < ? AND start_time + duration > ?
+         ORDER BY start_time, page`,
+        [idBook, end, start],
+      );
+      deleted.originalEvents = rows.map((row) => ({
+        id_book: Number(row.id_book),
+        page: Number(row.page),
+        start_time: Number(row.start_time),
+        duration: Number(row.duration),
+        total_pages: Number(row.total_pages),
+      }));
+      await this.db.execute(
+        `DELETE FROM page_stat_data
+         WHERE id_book = ? AND start_time < ? AND start_time + duration > ?`,
+        [idBook, end, start],
+      );
+      for (const event of deleted.originalEvents) {
+        const eventEnd = event.start_time + event.duration;
+        if (event.start_time < start) {
+          const left: PageEventSnapshot = {
+            ...event,
+            duration: start - event.start_time,
+          };
+          await this.insertPageEvent(idBook, {
+            page: left.page,
+            startTime: left.start_time,
+            duration: left.duration,
+            totalPages: left.total_pages,
+          });
+          deleted.replacementEvents.push(left);
+        }
+        if (eventEnd > end) {
+          const right: PageEventSnapshot = {
+            ...event,
+            start_time: end,
+            duration: eventEnd - end,
+          };
+          await this.insertPageEvent(idBook, {
+            page: right.page,
+            startTime: right.start_time,
+            duration: right.duration,
+            totalPages: right.total_pages,
+          });
+          deleted.replacementEvents.push(right);
+        }
+      }
+      await this.recomputeBookTotals(idBook);
+      await this.db.execute('COMMIT');
+      return deleted;
+    } catch (err) {
+      await this.db.execute('ROLLBACK');
+      throw err;
+    }
+  }
+
+  /** Restore rows captured by deleteBookRange. Local-only; sync tombstones are not created. */
+  async undoDelete(deleted: DeletedBookRange): Promise<void> {
+    if (deleted.originalEvents.length === 0) return;
+    const book = await this.db.select<BookRow>(`SELECT id FROM book WHERE md5 = ? LIMIT 1`, [
+      deleted.bookMd5,
+    ]);
+    const idBook = book[0]?.id;
+    if (idBook === undefined) return;
+
+    await this.db.execute('BEGIN');
+    try {
+      for (const event of deleted.replacementEvents) {
+        await this.db.execute(
+          `DELETE FROM page_stat_data WHERE id_book = ? AND page = ? AND start_time = ?`,
+          [event.id_book, event.page, event.start_time],
+        );
+      }
+      for (const event of deleted.originalEvents) {
+        await this.insertPageEvent(idBook, {
+          page: event.page,
+          startTime: event.start_time,
+          duration: event.duration,
+          totalPages: event.total_pages,
+        });
+      }
+      await this.recomputeBookTotals(idBook);
+      await this.db.execute('COMMIT');
+    } catch (err) {
+      await this.db.execute('ROLLBACK');
+      throw err;
+    }
   }
 
   async getBookByMd5(md5: string): Promise<BookRow | null> {

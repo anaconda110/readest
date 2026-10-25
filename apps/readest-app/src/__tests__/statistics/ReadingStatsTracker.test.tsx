@@ -23,6 +23,13 @@ vi.mock('@/store/readerProgressStore', () => ({
 vi.mock('@/store/bookDataStore', () => ({
   useBookDataStore: () => mocks.getBookData,
 }));
+vi.mock('@/store/settingsStore', () => ({
+  useSettingsStore: {
+    getState: () => ({
+      settings: { bookorbit: { enabled: false } },
+    }),
+  },
+}));
 vi.mock('@/services/statistics/statisticsDb', () => ({
   StatisticsDb: { open: mocks.open },
 }));
@@ -91,6 +98,7 @@ describe('ReadingStatsTracker while TTS plays', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-21T12:00:00'));
     vi.clearAllMocks();
     mocks.open.mockResolvedValue(mocks.db);
     mocks.db.upsertBook.mockResolvedValue(1);
@@ -121,12 +129,24 @@ describe('ReadingStatsTracker while TTS plays', () => {
     expect(mocks.db.insertPageEvent).toHaveBeenCalled();
   });
 
+  it('checkpoints long page dwell while the reader stays open', async () => {
+    mount();
+    await settle();
+
+    await settle(120_000);
+
+    expect(mocks.db.insertPageEvent).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ duration: 120 }),
+    );
+  });
+
   it('stops recording page dwell while TTS is playing', async () => {
     const { rerender } = mount();
     await settle();
     await emitPlaybackState('playing');
 
-    await settle(30_000);
+    await settle(130_000);
     setPage(1);
     rerender(<ReadingStatsTracker bookKey={BOOK_KEY} />);
     await settle(30_000);
@@ -176,5 +196,124 @@ describe('ReadingStatsTracker while TTS plays', () => {
     await settle();
 
     expect(mocks.db.insertPageEvent).toHaveBeenCalled();
+  });
+});
+
+describe('ReadingStatsTracker visibility and write failures', () => {
+  const BOOK_KEY = 'hash1-view1';
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-21T12:00:00'));
+    vi.clearAllMocks();
+    mocks.open.mockResolvedValue(mocks.db);
+    mocks.db.upsertBook.mockResolvedValue(1);
+    mocks.db.insertPageEvent.mockResolvedValue(undefined);
+    mocks.db.recomputeBookTotals.mockResolvedValue(undefined);
+    mocks.getBookData.mockReturnValue({
+      book: { hash: 'md5-1', title: 'Book', author: 'Author' },
+    } as unknown as null);
+    mocks.progress = {
+      pageinfo: { current: 0, next: 1, total: 100 },
+    } as unknown as BookProgress;
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('starts a fresh dwell after the tab becomes visible again', async () => {
+    const { rerender } = render(<ReadingStatsTracker bookKey={BOOK_KEY} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    mocks.progress = {
+      pageinfo: { current: 1, next: 2, total: 100 },
+    } as unknown as BookProgress;
+    rerender(<ReadingStatsTracker bookKey={BOOK_KEY} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(mocks.db.insertPageEvent).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ page: 1, duration: 5 }),
+    );
+  });
+
+  it('contains a page-write failure instead of leaking a rejection', async () => {
+    const error = new Error('write failed');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mocks.db.insertPageEvent.mockRejectedValue(error);
+    const { rerender } = render(<ReadingStatsTracker bookKey={BOOK_KEY} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+
+    mocks.progress = {
+      pageinfo: { current: 1, next: 2, total: 100 },
+    } as unknown as BookProgress;
+    rerender(<ReadingStatsTracker bookKey={BOOK_KEY} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(warn).toHaveBeenCalledWith('[stats] failed to persist reading events:', error);
+  });
+
+  it('serializes page writes so a slow write cannot be overtaken', async () => {
+    let finishFirstWrite!: () => void;
+    const firstWrite = new Promise<void>((resolve) => {
+      finishFirstWrite = resolve;
+    });
+    mocks.db.insertPageEvent.mockImplementationOnce(() => firstWrite).mockResolvedValue(undefined);
+    const { rerender } = render(<ReadingStatsTracker bookKey={BOOK_KEY} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+
+    mocks.progress = {
+      pageinfo: { current: 1, next: 2, total: 100 },
+    } as unknown as BookProgress;
+    rerender(<ReadingStatsTracker bookKey={BOOK_KEY} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mocks.db.insertPageEvent).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    mocks.progress = {
+      pageinfo: { current: 2, next: 3, total: 100 },
+    } as unknown as BookProgress;
+    rerender(<ReadingStatsTracker bookKey={BOOK_KEY} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mocks.db.insertPageEvent).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      finishFirstWrite();
+      await firstWrite;
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mocks.db.insertPageEvent).toHaveBeenCalledTimes(2);
   });
 });

@@ -15,10 +15,9 @@ export interface FlushedEvent {
 
 /**
  * Pure page-dwell tracker. The React layer feeds it `nowSeconds` and the
- * current `(page, totalPages)`; it returns zero-or-one immutable events to
- * persist. Events end on page-change / idle / hide / close. Each returned
- * event is final — its start_time and duration never change afterwards, which
- * lets sync use a simple start_time high-water cursor.
+ * current `(page, totalPages)`; it returns immutable events to persist.
+ * Long visits are split into fixed-size segments so sync can use a simple
+ * strictly-increasing start_time high-water cursor without losing time.
  */
 export class TrackerCore {
   private pending: PendingEvent | null = null;
@@ -27,13 +26,17 @@ export class TrackerCore {
 
   /** Notify the current page at `now`. Returns events flushed by leaving the prior page. */
   onPage(page: number, totalPages: number, now: number): FlushedEvent[] {
-    if (this.pending && this.pending.page === page) {
-      // Same page (e.g. resume after idle, or a no-op relocate): keep dwelling.
-      return [];
-    }
+    if (this.pending?.page === page) return [];
     const flushed = this.flush(now);
+    // No pending event means the clock was paused (idle/hidden): opening the
+    // same page again must start a fresh segment rather than silently resume.
     this.pending = { page, startTime: now, totalPages };
     return flushed;
+  }
+
+  /** Persist complete segments while keeping the unfinished segment running. */
+  checkpoint(now: number): FlushedEvent[] {
+    return this.drain(now, false);
   }
 
   onIdle(now: number): FlushedEvent[] {
@@ -49,12 +52,47 @@ export class TrackerCore {
   }
 
   private flush(now: number): FlushedEvent[] {
+    return this.drain(now, true);
+  }
+
+  private drain(now: number, finish: boolean): FlushedEvent[] {
     const p = this.pending;
-    this.pending = null;
     if (!p) return [];
-    const raw = now - p.startTime;
-    const duration = Math.min(Math.max(raw, 0), this.cfg.maxEventSeconds);
-    if (duration < this.cfg.minEventSeconds) return [];
-    return [{ page: p.page, startTime: p.startTime, duration, totalPages: p.totalPages }];
+
+    const events: FlushedEvent[] = [];
+    const segmentSeconds = this.cfg.maxEventSeconds;
+    let startTime = p.startTime;
+    let remaining = Math.max(0, now - startTime);
+
+    while (remaining >= segmentSeconds) {
+      events.push({
+        page: p.page,
+        startTime,
+        duration: segmentSeconds,
+        totalPages: p.totalPages,
+      });
+      startTime += segmentSeconds;
+      remaining -= segmentSeconds;
+    }
+
+    if (finish && remaining >= this.cfg.minEventSeconds) {
+      events.push({
+        page: p.page,
+        startTime,
+        duration: remaining,
+        totalPages: p.totalPages,
+      });
+      remaining = 0;
+    }
+
+    if (finish) {
+      this.pending = null;
+    } else {
+      // checkpoint() never pauses the clock. This includes an exact segment
+      // boundary, where a zero-duration pending event anchors the next span at
+      // `now`; later checkpoints or page changes accumulate from there.
+      this.pending = { ...p, startTime };
+    }
+    return events;
   }
 }

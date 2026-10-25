@@ -24,7 +24,7 @@ export interface StatBook {
 export interface StatsTrackingConfig {
   /** Seconds of inactivity before the current page event is flushed + paused. */
   idleTimeoutSeconds: number;
-  /** Hard per-event duration cap (safety net if a visibility event is missed). */
+  /** Maximum duration of one immutable event segment. */
   maxEventSeconds: number;
   /** Events shorter than this are dropped (ignore sub-second page flips). */
   minEventSeconds: number;

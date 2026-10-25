@@ -18,6 +18,7 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { eventDispatcher } from '@/utils/event';
 
 const nowSec = () => Math.floor(Date.now() / 1000);
+const CHECKPOINT_INTERVAL_MS = 15_000;
 
 // Statistics are best-effort telemetry: a failed write or sync (e.g. the
 // statistics DB torn down mid-flight on app teardown -> "database ... not
@@ -37,6 +38,8 @@ export default function ReadingStatsTracker({ bookKey }: { bookKey: string }) {
   const dbRef = useRef<StatisticsDb | null>(null);
   const idleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
   // While this book is being read aloud, TtsStatsRecorder owns the clock and
   // this tracker stands down — otherwise TTS auto-follow's relocations would
   // bill the same wall-clock a second time. Seeded from the manager rather than
@@ -54,6 +57,8 @@ export default function ReadingStatsTracker({ bookKey }: { bookKey: string }) {
   const title = book?.title ?? '';
   // Book.author is the single-string author field; upsertBook takes authors: string.
   const authors = book?.author ?? '';
+  const bookRef = useRef({ bookMd5, title, authors });
+  bookRef.current = { bookMd5, title, authors };
 
   const syncEnabled = () => !!user && isSyncCategoryEnabled('stats');
 
@@ -104,20 +109,30 @@ export default function ReadingStatsTracker({ bookKey }: { bookKey: string }) {
   }, [appService]);
 
   // Persist flushed events into the statistics DB.
-  const persist = async (events: FlushedEvent[]): Promise<void> => {
-    const db = dbRef.current;
-    if (!db || !bookMd5 || events.length === 0) return;
-    try {
-      const idBook = await db.upsertBook({ bookMd5, title, authors });
-      for (const e of events) await db.insertPageEvent(idBook, e);
-      await db.recomputeBookTotals(idBook);
-      schedulePush();
-    } catch (err) {
-      // The statistics DB can be closed mid-write on app/tab teardown
-      // ("database ... not loaded", Sentry READEST-6). Best-effort: log and
-      // never reject, so the fire-and-forget dispatch sites stay safe.
-      console.warn('[stats] failed to persist reading events:', err);
-    }
+  const persist = (events: FlushedEvent[]): Promise<void> => {
+    if (events.length === 0) return writeQueueRef.current;
+    const write = writeQueueRef.current.then(async () => {
+      const db = dbRef.current;
+      const { bookMd5: md5, title: bookTitle, authors: bookAuthors } = bookRef.current;
+      if (!db || !md5) return;
+      try {
+        const idBook = await db.upsertBook({
+          bookMd5: md5,
+          title: bookTitle,
+          authors: bookAuthors,
+        });
+        for (const e of events) await db.insertPageEvent(idBook, e);
+        await db.recomputeBookTotals(idBook);
+        schedulePush();
+      } catch (err) {
+        // The statistics DB can be closed mid-write on app/tab teardown
+        // ("database ... not loaded", Sentry READEST-6). Best-effort: log and
+        // never reject, so the fire-and-forget dispatch sites stay safe.
+        console.warn('[stats] failed to persist reading events:', err);
+      }
+    });
+    writeQueueRef.current = write.catch(() => {});
+    return write;
   };
 
   const armIdle = () => {
@@ -140,6 +155,20 @@ export default function ReadingStatsTracker({ bookKey }: { bookKey: string }) {
     openPageAt(progress?.pageinfo);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [progress?.pageinfo]);
+
+  // Persist complete 120-second segments while a long page stays open. The
+  // unfinished tail remains in TrackerCore for the next page/idle/hide flush.
+  useEffect(() => {
+    heartbeatRef.current = setInterval(() => {
+      if (ttsPlayingRef.current || document.visibilityState === 'hidden') return;
+      void persist(coreRef.current.checkpoint(nowSec()));
+    }, CHECKPOINT_INTERVAL_MS);
+    return () => {
+      if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Hand the clock to TtsStatsRecorder while this book is read aloud, and take
   // it back afterwards. TTS turns pages to follow the narration, so without
@@ -171,6 +200,10 @@ export default function ReadingStatsTracker({ bookKey }: { bookKey: string }) {
       if (document.visibilityState === 'hidden') {
         if (idleRef.current) clearTimeout(idleRef.current);
         void persist(coreRef.current.onHide(nowSec()));
+      } else if (!ttsPlayingRef.current) {
+        // A hidden tab may have skipped page relocations. Re-anchor the clock
+        // at the current visible page instead of billing the hidden interval.
+        openPageAt(getBookProgress(bookKey)?.pageinfo);
       }
     };
     document.addEventListener('visibilitychange', onVis);

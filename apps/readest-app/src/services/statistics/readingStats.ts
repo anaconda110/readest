@@ -1,7 +1,11 @@
-/** Minimum reading in a day for it to count toward a streak. */
-const MIN_STREAK_SECONDS = 60;
-
 export type ReadingRange = 'week' | 'month' | 'year';
+
+export interface ReadingPeriodBounds {
+  /** Inclusive start of the period. */
+  start: Date;
+  /** Exclusive end of the period. */
+  end: Date;
+}
 
 export interface ReadingBar {
   /** Local day or month this bar covers. */
@@ -19,6 +23,21 @@ const addDays = (date: Date, days: number) => {
   return d;
 };
 
+/** Natural period bounds in local time. Weeks start on Monday; ends are exclusive. */
+export const getPeriodBounds = (range: ReadingRange, date = new Date()): ReadingPeriodBounds => {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  if (range === 'week') {
+    const daysSinceMonday = (date.getDay() + 6) % 7;
+    const start = new Date(year, month, date.getDate() - daysSinceMonday);
+    return { start, end: addDays(start, 7) };
+  }
+  if (range === 'month') {
+    return { start: new Date(year, month, 1), end: new Date(year, month + 1, 1) };
+  }
+  return { start: new Date(year, 0, 1), end: new Date(year + 1, 0, 1) };
+};
+
 /** Folds quarter-hour totals into seconds read on each local day. */
 export const getDailySeconds = (
   quarters: { quarter: number; seconds: number }[],
@@ -33,7 +52,7 @@ export const getDailySeconds = (
 
 /** The current streak runs to today, or to yesterday until today counts. */
 export const getStreaks = (daily: Map<string, number>, today = new Date()) => {
-  const isReadingDay = (date: Date) => (daily.get(toDateKey(date)) ?? 0) >= MIN_STREAK_SECONDS;
+  const isReadingDay = (date: Date) => (daily.get(toDateKey(date)) ?? 0) > 0;
   let current = 0;
   for (let day = isReadingDay(today) ? today : addDays(today, -1); isReadingDay(day); ) {
     current++;
@@ -43,7 +62,7 @@ export const getStreaks = (daily: Map<string, number>, today = new Date()) => {
   let longest = 0;
   let run = 0;
   let previous = '';
-  const days = [...daily.keys()].filter((key) => daily.get(key)! >= MIN_STREAK_SECONDS).sort();
+  const days = [...daily.keys()].filter((key) => daily.get(key)! > 0).sort();
   for (const key of days) {
     run = previous && toDateKey(addDays(new Date(`${previous}T00:00:00`), 1)) === key ? run + 1 : 1;
     longest = Math.max(longest, run);
@@ -52,15 +71,16 @@ export const getStreaks = (daily: Map<string, number>, today = new Date()) => {
   return { current, longest };
 };
 
-/** Bars for the last 7 or 30 days, or for the last 12 months. */
+/** Bars for the current natural week, month, or year. */
 export const getReadingBars = (
   daily: Map<string, number>,
   range: ReadingRange,
   today = new Date(),
 ): ReadingBar[] => {
+  const bounds = getPeriodBounds(range, today);
   if (range === 'year') {
     return Array.from({ length: 12 }, (_, i) => {
-      const date = new Date(today.getFullYear(), today.getMonth() - 11 + i, 1);
+      const date = new Date(bounds.start.getFullYear(), i, 1);
       const prefix = toDateKey(date).slice(0, 8);
       let seconds = 0;
       for (const [key, value] of daily) {
@@ -69,9 +89,12 @@ export const getReadingBars = (
       return { date, seconds };
     });
   }
-  const length = range === 'week' ? 7 : 30;
-  return Array.from({ length }, (_, i) => {
-    const date = addDays(today, i - length + 1);
-    return { date, seconds: daily.get(toDateKey(date)) ?? 0 };
-  });
+  const bars: ReadingBar[] = [];
+  for (let date = bounds.start; date < bounds.end; date = addDays(date, 1)) {
+    bars.push({
+      date,
+      seconds: daily.get(toDateKey(date)) ?? 0,
+    });
+  }
+  return bars;
 };

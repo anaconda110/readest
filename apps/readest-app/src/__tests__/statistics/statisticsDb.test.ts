@@ -199,6 +199,163 @@ describe('StatisticsDb', () => {
   });
 });
 
+describe('StatisticsDb natural-period queries', () => {
+  const range = {
+    start: Math.floor(new Date('2026-10-19T00:00:00').getTime() / 1000),
+    end: Math.floor(new Date('2026-10-26T00:00:00').getTime() / 1000),
+  };
+  const unix = (local: string) => Math.floor(new Date(local).getTime() / 1000);
+
+  it('aggregates clipped natural-day seconds and distinct summary counts', async () => {
+    const stats = StatisticsDb.from(await freshStatsDb());
+    const a = await stats.upsertBook({ bookMd5: 'a-md5', title: 'Alpha', authors: 'A' });
+    const b = await stats.upsertBook({ bookMd5: 'b-md5', title: 'Beta', authors: 'B' });
+
+    // Starts before the week and overlaps its first 60 seconds; starts in the
+    // week and ends after it; the final row is wholly outside.
+    await stats.insertPageEvent(a, {
+      page: 1,
+      startTime: unix('2026-10-18T23:59:00'),
+      duration: 120,
+      totalPages: 100,
+    });
+    await stats.insertPageEvent(a, {
+      page: 2,
+      startTime: unix('2026-10-20T23:59:30'),
+      duration: 60,
+      totalPages: 100,
+    });
+    await stats.insertPageEvent(b, {
+      page: 3,
+      startTime: unix('2026-10-25T23:59:00'),
+      duration: 120,
+      totalPages: 100,
+    });
+    await stats.insertPageEvent(b, {
+      page: 4,
+      startTime: unix('2026-10-26T00:00:00'),
+      duration: 90,
+      totalPages: 100,
+    });
+
+    expect(await stats.getDailyReadingSeconds(range.start, range.end)).toEqual([
+      { date: '2026-10-19', seconds: 60 },
+      { date: '2026-10-20', seconds: 30 },
+      { date: '2026-10-21', seconds: 30 },
+      { date: '2026-10-25', seconds: 60 },
+    ]);
+    expect(await stats.getReadingSummary(range.start, range.end)).toEqual({
+      seconds: 180,
+      days: 4,
+      books: 2,
+      pages: 3,
+    });
+  });
+
+  it('returns empty results when no event overlaps the range', async () => {
+    const stats = StatisticsDb.from(await freshStatsDb());
+    expect(await stats.getReadingSummary(range.start, range.end)).toEqual({
+      seconds: 0,
+      days: 0,
+      books: 0,
+      pages: 0,
+    });
+    expect(await stats.getBookReadingRankings(range.start, range.end)).toEqual([]);
+    expect(await stats.getDailyBookBreakdown(range.start, range.end)).toEqual([]);
+  });
+
+  it('ranks books deterministically by seconds, title and md5', async () => {
+    const stats = StatisticsDb.from(await freshStatsDb());
+    const ids = new Map<string, number>();
+    for (const [md5, title] of [
+      ['z-md5', 'Same'],
+      ['a-md5', 'Same'],
+      ['leader', 'Leader'],
+    ] as const) {
+      ids.set(md5, await stats.upsertBook({ bookMd5: md5, title, authors: '' }));
+    }
+    const add = (md5: string, page: number, startTime: number, duration: number) =>
+      stats.insertPageEvent(ids.get(md5)!, { page, startTime, duration, totalPages: 10 });
+
+    await add('leader', 1, unix('2026-10-20T10:00:00'), 100);
+    await add('z-md5', 1, unix('2026-10-20T11:00:00'), 60);
+    await add('z-md5', 2, unix('2026-10-20T11:01:00'), 30);
+    await add('a-md5', 1, unix('2026-10-20T12:00:00'), 60);
+    await add('a-md5', 2, unix('2026-10-20T12:01:00'), 30);
+
+    const ranking = await stats.getBookReadingRankings(range.start, range.end);
+    expect(ranking.map((book) => [book.bookMd5, book.seconds])).toEqual([
+      ['leader', 100],
+      ['a-md5', 90],
+      ['z-md5', 90],
+    ]);
+  });
+
+  it('returns per-book daily details with natural-day clipping', async () => {
+    const stats = StatisticsDb.from(await freshStatsDb());
+    const id = await stats.upsertBook({ bookMd5: 'night', title: 'Night', authors: 'N' });
+    await stats.insertPageEvent(id, {
+      page: 1,
+      startTime: unix('2026-10-20T23:59:30'),
+      duration: 60,
+      totalPages: 100,
+    });
+
+    expect(await stats.getDailyBookBreakdown(range.start, range.end)).toEqual([
+      {
+        date: '2026-10-20',
+        bookMd5: 'night',
+        title: 'Night',
+        authors: 'N',
+        seconds: 30,
+        pages: 1,
+      },
+      {
+        date: '2026-10-21',
+        bookMd5: 'night',
+        title: 'Night',
+        authors: 'N',
+        seconds: 30,
+        pages: 1,
+      },
+    ]);
+  });
+
+  it('deletes one book-day by clipping a long cross-day event, then restores it on undo', async () => {
+    const stats = StatisticsDb.from(await freshStatsDb());
+    const id = await stats.upsertBook({ bookMd5: 'clip', title: 'Clip', authors: '' });
+    await stats.insertPageEvent(id, {
+      page: 1,
+      startTime: unix('2026-10-20T23:50:00'),
+      // 24.5 hours: 10 minutes before the deleted day, the full deleted day,
+      // and 20 minutes after it.
+      duration: 24 * 3600 + 1800,
+      totalPages: 100,
+    });
+
+    const deleted = await stats.deleteBookRange(
+      'clip',
+      unix('2026-10-21T00:00:00'),
+      unix('2026-10-22T00:00:00'),
+    );
+    const queryStart = unix('2026-10-20T00:00:00');
+    const queryEnd = unix('2026-10-23T00:00:00');
+    expect(await stats.getDailyReadingSeconds(queryStart, queryEnd)).toEqual([
+      { date: '2026-10-20', seconds: 600 },
+      { date: '2026-10-22', seconds: 1200 },
+    ]);
+    expect((await stats.getBookByMd5('clip'))!.total_read_time).toBe(1800);
+
+    await stats.undoDelete(deleted);
+    expect(await stats.getDailyReadingSeconds(queryStart, queryEnd)).toEqual([
+      { date: '2026-10-20', seconds: 600 },
+      { date: '2026-10-21', seconds: 86400 },
+      { date: '2026-10-22', seconds: 1200 },
+    ]);
+    expect((await stats.getBookByMd5('clip'))!.total_read_time).toBe(88200);
+  });
+});
+
 describe('StatisticsDb.open', () => {
   it('retries after a transient singleton open failure', async () => {
     const db = await freshStatsDb();
