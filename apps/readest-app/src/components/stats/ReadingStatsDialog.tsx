@@ -36,11 +36,14 @@ export const setReadingStatsDialogVisible = (visible: boolean) => {
   }
 };
 
-interface ReadingStats {
-  periodStart: number;
-  periodEnd: number;
+interface AllTimeStats {
   daily: Map<string, number>;
   totals: { seconds: number; books: number; pages: number };
+}
+
+interface PeriodStats {
+  periodStart: number;
+  periodEnd: number;
   summary: ReadingSummary;
   rankings: BookReadingRanking[];
   breakdown: DailyBookBreakdown[];
@@ -70,9 +73,12 @@ const ReadingStatsContent: React.FC = () => {
   const { user } = useAuth();
   const [range, setRange] = useState<ReadingRange>('week');
   const [anchorDate, setAnchorDate] = useState(() => new Date());
-  const [stats, setStats] = useState<ReadingStats | null>(null);
+  const [statisticsDb, setStatisticsDb] = useState<StatisticsDb | null>(null);
+  const [allTimeStats, setAllTimeStats] = useState<AllTimeStats | null>(null);
+  const [periodStats, setPeriodStats] = useState<PeriodStats | null>(null);
   const [failed, setFailed] = useState(false);
-  const [reloadToken, setReloadToken] = useState(0);
+  const [allTimeReloadToken, setAllTimeReloadToken] = useState(0);
+  const [periodReloadToken, setPeriodReloadToken] = useState(0);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [undoState, setUndoState] = useState<UndoState | null>(null);
   const [actionNotice, setActionNotice] = useState<'deleted' | 'undone' | 'error' | null>(null);
@@ -106,33 +112,39 @@ const ReadingStatsContent: React.FC = () => {
     let cancelled = false;
     setFailed(false);
 
-    const load = async (db: StatisticsDb, start: number, end: number): Promise<ReadingStats> => {
+    StatisticsDb.open(appService)
+      .then((db) => {
+        if (cancelled) return;
+        dbRef.current = db;
+        setStatisticsDb(db);
+      })
+      .catch((err) => {
+        console.error('Failed to load reading stats:', err);
+        if (!cancelled) setFailed(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [appService]);
+
+  useEffect(() => {
+    if (!statisticsDb) return;
+    let cancelled = false;
+    setFailed(false);
+
+    const load = async (db: StatisticsDb): Promise<AllTimeStats> => {
       const allTimeEnd = Math.floor(Date.now() / 1000) + 86400;
-      const [dailyRows, totals, periodRows, summary, rankings, breakdown] = await Promise.all([
+      const [dailyRows, totals] = await Promise.all([
         db.getDailyReadingSeconds(0, allTimeEnd),
         db.getReadingTotals(),
-        db.getDailyReadingSeconds(start, end),
-        db.getReadingSummary(start, end),
-        db.getBookReadingRankings(start, end),
-        db.getDailyBookBreakdown(start, end),
       ]);
-      return {
-        periodStart: start,
-        periodEnd: end,
-        daily: toDailyMap(dailyRows),
-        totals,
-        summary,
-        rankings,
-        breakdown,
-        periodDaily: toDailyMap(periodRows),
-      };
+      return { daily: toDailyMap(dailyRows), totals };
     };
 
-    StatisticsDb.open(appService)
-      .then(async (db) => {
-        dbRef.current = db;
-        const localStats = await load(db, periodStart, periodEnd);
-        if (!cancelled) setStats(localStats);
+    load(statisticsDb)
+      .then(async (localStats) => {
+        if (!cancelled) setAllTimeStats(localStats);
 
         // Only an open book pulls stats, so from the library this device may
         // not have the account's other devices yet: show what's here, then pull.
@@ -143,12 +155,15 @@ const ReadingStatsContent: React.FC = () => {
             import('@/libs/sync'),
             import('@/services/statistics/statsSync'),
           ]);
-          await pullStats(db, new SyncClient()).catch((err) =>
+          await pullStats(statisticsDb, new SyncClient()).catch((err) =>
             console.warn('Failed to pull reading stats:', err),
           );
           pulledRef.current = true;
-          const pulledStats = await load(db, periodStart, periodEnd);
-          if (!cancelled) setStats(pulledStats);
+          const pulledStats = await load(statisticsDb);
+          if (!cancelled) {
+            setAllTimeStats(pulledStats);
+            setPeriodReloadToken((token) => token + 1);
+          }
         }
       })
       .catch((err) => {
@@ -159,7 +174,35 @@ const ReadingStatsContent: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [appService, user, periodStart, periodEnd, reloadToken]);
+  }, [statisticsDb, user, allTimeReloadToken]);
+
+  useEffect(() => {
+    if (!statisticsDb) return;
+    let cancelled = false;
+    setFailed(false);
+
+    statisticsDb
+      .getReadingPeriodStats(periodStart, periodEnd)
+      .then(({ summary, rankings, breakdown, daily }) => {
+        if (cancelled) return;
+        setPeriodStats({
+          periodStart,
+          periodEnd,
+          summary,
+          rankings,
+          breakdown,
+          periodDaily: toDailyMap(daily),
+        });
+      })
+      .catch((err) => {
+        console.error('Failed to load reading stats:', err);
+        if (!cancelled) setFailed(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [statisticsDb, periodStart, periodEnd, periodReloadToken]);
 
   useEffect(() => {
     if (!user) pulledRef.current = false;
@@ -221,7 +264,12 @@ const ReadingStatsContent: React.FC = () => {
   }
   // Never pair a newly selected period with data loaded for the previous one,
   // but keep the period controls in place and make the reload explicit.
-  if (!stats || stats.periodStart !== periodStart || stats.periodEnd !== periodEnd) {
+  if (
+    !allTimeStats ||
+    !periodStats ||
+    periodStats.periodStart !== periodStart ||
+    periodStats.periodEnd !== periodEnd
+  ) {
     return (
       <div className='flex flex-col gap-6 pb-6'>
         {periodHeader}
@@ -236,7 +284,8 @@ const ReadingStatsContent: React.FC = () => {
     );
   }
 
-  const { daily, totals, summary, rankings, breakdown, periodDaily } = stats;
+  const { daily, totals } = allTimeStats;
+  const { summary, rankings, breakdown, periodDaily } = periodStats;
   const streaks = getStreaks(daily);
   const time = (seconds: number) => formatDuration(Math.floor(seconds / 60), _);
   const days = (count: number) => _('{{count}} days', { count });
@@ -266,7 +315,8 @@ const ReadingStatsContent: React.FC = () => {
       );
       setUndoState({ deleted, title: titleOf(row) });
       setActionNotice('deleted');
-      setReloadToken((token) => token + 1);
+      setAllTimeReloadToken((token) => token + 1);
+      setPeriodReloadToken((token) => token + 1);
     } catch (err) {
       console.error('Failed to delete reading data:', err);
       setActionNotice('error');
@@ -282,7 +332,8 @@ const ReadingStatsContent: React.FC = () => {
       await db.undoDelete(undoState.deleted);
       setUndoState(null);
       setActionNotice('undone');
-      setReloadToken((token) => token + 1);
+      setAllTimeReloadToken((token) => token + 1);
+      setPeriodReloadToken((token) => token + 1);
     } catch (err) {
       console.error('Failed to restore reading data:', err);
       setActionNotice('error');

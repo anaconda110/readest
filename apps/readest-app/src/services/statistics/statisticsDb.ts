@@ -61,6 +61,13 @@ export interface DailyBookBreakdown {
   pages: number;
 }
 
+export interface ReadingPeriodStats {
+  summary: ReadingSummary;
+  rankings: BookReadingRanking[];
+  breakdown: DailyBookBreakdown[];
+  daily: DailyReadingSeconds[];
+}
+
 interface PageEventSnapshot extends DatabaseRow {
   id_book: number;
   page: number;
@@ -332,6 +339,80 @@ export class StatisticsDb {
     }));
   }
 
+  /** All dashboard aggregates for [start, end), using one event query and one event pass. */
+  async getReadingPeriodStats(start: number, end: number): Promise<ReadingPeriodStats> {
+    const events = await this.getOverlappingEvents(start, end);
+    const dailySeconds = new Map<string, number>();
+    const days = new Set<string>();
+    const summaryBooks = new Set<string>();
+    const summaryPages = new Set<string>();
+    const byBook = new Map<string, BookReadingRanking>();
+    const byDayAndBook = new Map<string, DailyBookBreakdown & { pageKeys: Set<string> }>();
+
+    for (const event of events) {
+      const clippedStart = Math.max(start, event.start_time);
+      const clippedEnd = Math.min(end, event.start_time + event.duration);
+      if (clippedEnd <= clippedStart) continue;
+
+      summaryBooks.add(event.md5);
+      summaryPages.add(`${event.id_book}:${event.page}`);
+
+      const book = byBook.get(event.md5) ?? {
+        bookMd5: event.md5,
+        title: event.title,
+        authors: event.authors,
+        seconds: 0,
+      };
+      book.seconds += clippedEnd - clippedStart;
+      byBook.set(event.md5, book);
+
+      for (const segment of splitIntervalByLocalDay(clippedStart, clippedEnd)) {
+        dailySeconds.set(segment.date, (dailySeconds.get(segment.date) ?? 0) + segment.seconds);
+        days.add(segment.date);
+
+        const key = `${segment.date}\u0000${event.md5}`;
+        const detail = byDayAndBook.get(key) ?? {
+          date: segment.date,
+          bookMd5: event.md5,
+          title: event.title,
+          authors: event.authors,
+          seconds: 0,
+          pages: 0,
+          pageKeys: new Set<string>(),
+        };
+        detail.seconds += segment.seconds;
+        detail.pageKeys.add(`${event.id_book}:${event.page}`);
+        detail.pages = detail.pageKeys.size;
+        byDayAndBook.set(key, detail);
+      }
+    }
+
+    const daily = [...dailySeconds]
+      .filter(([, seconds]) => seconds > 0)
+      .sort(([a], [b]) => compareText(a, b))
+      .map(([date, seconds]) => ({ date, seconds }));
+    const rankings = [...byBook.values()].sort(
+      (a, b) =>
+        b.seconds - a.seconds || compareText(a.title, b.title) || compareText(a.bookMd5, b.bookMd5),
+    );
+    const breakdown = [...byDayAndBook.values()]
+      .map(({ pageKeys: _pageKeys, ...row }) => row)
+      .sort(
+        (a, b) =>
+          compareText(a.date, b.date) ||
+          b.seconds - a.seconds ||
+          compareText(a.title, b.title) ||
+          compareText(a.bookMd5, b.bookMd5),
+      );
+    const summary = {
+      seconds: daily.reduce((total, row) => total + row.seconds, 0),
+      days: days.size,
+      books: summaryBooks.size,
+      pages: summaryPages.size,
+    };
+    return { summary, rankings, breakdown, daily };
+  }
+
   /** Seconds read on each local natural day within [start, end), clipped at both ends. */
   async getDailyReadingSeconds(start: number, end: number): Promise<DailyReadingSeconds[]> {
     const events = await this.getOverlappingEvents(start, end);
@@ -350,80 +431,15 @@ export class StatisticsDb {
   }
 
   async getReadingSummary(start: number, end: number): Promise<ReadingSummary> {
-    const events = await this.getOverlappingEvents(start, end);
-    const days = new Set<string>();
-    const books = new Set<string>();
-    const pages = new Set<string>();
-    let seconds = 0;
-    for (const event of events) {
-      const clippedStart = Math.max(start, event.start_time);
-      const clippedEnd = Math.min(end, event.start_time + event.duration);
-      if (clippedEnd <= clippedStart) continue;
-      for (const segment of splitIntervalByLocalDay(clippedStart, clippedEnd)) {
-        days.add(segment.date);
-        seconds += segment.seconds;
-      }
-      books.add(event.md5);
-      pages.add(`${event.id_book}:${event.page}`);
-    }
-    return { seconds, days: days.size, books: books.size, pages: pages.size };
+    return (await this.getReadingPeriodStats(start, end)).summary;
   }
 
   async getBookReadingRankings(start: number, end: number): Promise<BookReadingRanking[]> {
-    const events = await this.getOverlappingEvents(start, end);
-    const byBook = new Map<string, BookReadingRanking>();
-    for (const event of events) {
-      const clippedStart = Math.max(start, event.start_time);
-      const clippedEnd = Math.min(end, event.start_time + event.duration);
-      if (clippedEnd <= clippedStart) continue;
-      const existing = byBook.get(event.md5) ?? {
-        bookMd5: event.md5,
-        title: event.title,
-        authors: event.authors,
-        seconds: 0,
-      };
-      existing.seconds += clippedEnd - clippedStart;
-      byBook.set(event.md5, existing);
-    }
-    return [...byBook.values()].sort(
-      (a, b) =>
-        b.seconds - a.seconds || compareText(a.title, b.title) || compareText(a.bookMd5, b.bookMd5),
-    );
+    return (await this.getReadingPeriodStats(start, end)).rankings;
   }
 
   async getDailyBookBreakdown(start: number, end: number): Promise<DailyBookBreakdown[]> {
-    const events = await this.getOverlappingEvents(start, end);
-    const groups = new Map<string, DailyBookBreakdown & { pageKeys: Set<string> }>();
-    for (const event of events) {
-      const clippedStart = Math.max(start, event.start_time);
-      const clippedEnd = Math.min(end, event.start_time + event.duration);
-      if (clippedEnd <= clippedStart) continue;
-      for (const segment of splitIntervalByLocalDay(clippedStart, clippedEnd)) {
-        const key = `${segment.date}\u0000${event.md5}`;
-        const existing = groups.get(key) ?? {
-          date: segment.date,
-          bookMd5: event.md5,
-          title: event.title,
-          authors: event.authors,
-          seconds: 0,
-          pages: 0,
-          pageKeys: new Set<string>(),
-        };
-        existing.seconds += segment.seconds;
-        existing.pageKeys.add(`${event.id_book}:${event.page}`);
-        existing.pages = existing.pageKeys.size;
-        groups.set(key, existing);
-      }
-    }
-    return [...groups.values()]
-      .map(({ pageKeys: _pageKeys, ...row }) => row)
-      .sort(
-        (a, b) =>
-          compareText(a.date, b.date) ||
-          b.seconds - a.seconds ||
-          compareText(a.title, b.title) ||
-          compareText(a.bookMd5, b.bookMd5),
-      );
+    return (await this.getReadingPeriodStats(start, end)).breakdown;
   }
 
   /**

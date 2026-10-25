@@ -264,6 +264,42 @@ describe('StatisticsDb natural-period queries', () => {
     expect(await stats.getDailyBookBreakdown(range.start, range.end)).toEqual([]);
   });
 
+  it('builds all period aggregates with one event scan', async () => {
+    const database = await freshStatsDb();
+    const stats = StatisticsDb.from(database);
+    const alpha = await stats.upsertBook({ bookMd5: 'alpha', title: 'Alpha', authors: 'A' });
+    const beta = await stats.upsertBook({ bookMd5: 'beta', title: 'Beta', authors: 'B' });
+    await stats.insertPageEvent(alpha, {
+      page: 1,
+      startTime: unix('2026-10-20T23:59:30'),
+      duration: 90,
+      totalPages: 100,
+    });
+    await stats.insertPageEvent(alpha, {
+      page: 2,
+      startTime: unix('2026-10-21T10:00:00'),
+      duration: 30,
+      totalPages: 100,
+    });
+    await stats.insertPageEvent(beta, {
+      page: 1,
+      startTime: unix('2026-10-22T10:00:00'),
+      duration: 60,
+      totalPages: 50,
+    });
+
+    const expected = {
+      summary: await stats.getReadingSummary(range.start, range.end),
+      rankings: await stats.getBookReadingRankings(range.start, range.end),
+      breakdown: await stats.getDailyBookBreakdown(range.start, range.end),
+      daily: await stats.getDailyReadingSeconds(range.start, range.end),
+    };
+    const select = vi.spyOn(database, 'select');
+
+    await expect(stats.getReadingPeriodStats(range.start, range.end)).resolves.toEqual(expected);
+    expect(select).toHaveBeenCalledTimes(1);
+  });
+
   it('ranks books deterministically by seconds, title and md5', async () => {
     const stats = StatisticsDb.from(await freshStatsDb());
     const ids = new Map<string, number>();
