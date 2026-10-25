@@ -1,7 +1,13 @@
 export { createTauriAdapter } from './TauriChatAdapter';
 export type { TauriAdapterOptions } from './TauriChatAdapter';
-export { selectBackend } from './retrievalBackend';
-export type { RetrievalBackend, RetrievalBackendKind } from './retrievalBackend';
+export { getEmbeddingModelName, selectBackend } from './retrievalBackend';
+export type {
+  RetrievalBackend,
+  RetrievalBackendKind,
+  SearchBookResponse,
+  SearchBookResult,
+  SearchStatus,
+} from './retrievalBackend';
 export { LegacyIdbBackend } from './LegacyIdbBackend';
 export { ReedyBackend } from './ReedyBackend';
 export { ReedySourceStore } from './reedySourceStore';

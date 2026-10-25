@@ -7,11 +7,12 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { useResponsiveSize } from '@/hooks/useResponsiveSize';
 
 const NotebookHeader: React.FC<{
+  title?: string;
   isPinned: boolean;
   isFullScreenMobile?: boolean;
   handleClose: () => void;
   handleTogglePin: () => void;
-}> = ({ isPinned, isFullScreenMobile = false, handleClose, handleTogglePin }) => {
+}> = ({ title, isPinned, isFullScreenMobile = false, handleClose, handleTogglePin }) => {
   const _ = useTranslation();
   const iconSize15 = useResponsiveSize(15);
   const iconSize18 = useResponsiveSize(18);
@@ -19,7 +20,7 @@ const NotebookHeader: React.FC<{
     <div className='notebook-header relative flex h-11 items-center px-3' dir='ltr'>
       <div className='absolute inset-0 z-[-1] flex items-center justify-center space-x-2'>
         <RiQuillPenLine size={iconSize18} />
-        <div className='notebook-title text-sm font-medium'>{_('Notebook')}</div>
+        <div className='notebook-title text-sm font-medium'>{title ?? _('Notebook')}</div>
       </div>
       <div className='flex w-full items-center gap-x-4'>
         <button

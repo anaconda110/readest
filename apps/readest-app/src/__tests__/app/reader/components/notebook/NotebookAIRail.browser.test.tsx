@@ -16,7 +16,7 @@ it('floats the collapsed rail at the right screen edge with the target size', as
     <NotebookAIRail expanded={false} variant='floating' onToggle={vi.fn()} style={{ right: 0 }} />,
   );
 
-  const rail = screen.getByRole('button', { name: 'Expand AI panel', exact: true });
+  const rail = screen.getByRole('button', { name: /^Expand AI panel$/ });
   const rect = rail.getBoundingClientRect();
 
   expect(rect.width).toBe(32);
@@ -35,7 +35,7 @@ it('attaches the expanded rail to the panel edge without changing its width', as
   );
 
   const panel = container.firstElementChild as HTMLDivElement;
-  const rail = screen.getByRole('button', { name: 'Collapse AI panel', exact: true });
+  const rail = screen.getByRole('button', { name: /^Collapse AI panel$/ });
   const panelRect = panel.getBoundingClientRect();
   const railRect = rail.getBoundingClientRect();
 

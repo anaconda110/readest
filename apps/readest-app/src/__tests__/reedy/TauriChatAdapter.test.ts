@@ -42,6 +42,7 @@ function fakeLegacy(overrides: FakeBackendOverrides = {}): RetrievalBackend {
     isIndexed: vi.fn(async () => true),
     indexBook: vi.fn(async () => {}),
     clearBook: vi.fn(async () => {}),
+    searchBook: vi.fn(async () => ({ status: 'ok' as const, results: [] })),
     searchForSystemPrompt: vi.fn(async () => overrides.searchResult ?? []),
   };
 }
@@ -53,6 +54,7 @@ function fakeReedy(overrides: FakeBackendOverrides = {}): RetrievalBackend {
     isIndexed: vi.fn(async () => true),
     indexBook: vi.fn(async () => {}),
     clearBook: vi.fn(async () => {}),
+    searchBook: vi.fn(async () => ({ status: 'ok' as const, results: [] })),
     buildLookupTool: overrides.buildLookupTool ?? vi.fn(() => tool),
   };
 }

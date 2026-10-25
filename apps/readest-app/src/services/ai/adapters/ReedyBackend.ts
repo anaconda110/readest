@@ -14,7 +14,12 @@ import {
 import type { DatabaseService } from '@/types/database';
 import { getAIProvider } from '../providers';
 import type { AISettings, EmbeddingProgress } from '../types';
-import type { BackendIndexOptions, RetrievalBackend } from './retrievalBackend';
+import {
+  getEmbeddingModelName,
+  type BackendIndexOptions,
+  type RetrievalBackend,
+  type SearchBookResponse,
+} from './retrievalBackend';
 import type { ReedySourceStore } from './reedySourceStore';
 
 const REEDY_DB_KEY = 'reedy';
@@ -120,6 +125,33 @@ export class ReedyBackend implements RetrievalBackend {
     await reedy.dropBookData(bookHash);
   }
 
+  async searchBook(
+    query: string,
+    bookHash: string,
+    options: { topK: number; spoilerBoundPosition?: number },
+  ): Promise<SearchBookResponse> {
+    const { retriever } = await this.reedyReady;
+    const result = await retriever.search({
+      bookHash,
+      query,
+      k: options.topK,
+      spoilerBoundPosition: options.spoilerBoundPosition,
+      activeEmbeddingModel: this.model,
+    });
+    return {
+      status: result.status,
+      reason: result.reason,
+      results: result.passages.map((passage) => ({
+        id: passage.id,
+        text: passage.text,
+        chapterTitle: passage.chapterTitle,
+        sectionIndex: passage.sectionIndex,
+        score: passage.score,
+        cfi: passage.cfi,
+      })),
+    };
+  }
+
   buildLookupTool(args: {
     bookHash: string;
     turnId: string;
@@ -191,7 +223,7 @@ function randomSessionId(): string {
 function adaptEmbeddingModel(settings: AISettings): ReedyEmbeddingModel {
   const provider = getAIProvider(settings);
   const vercelModel = provider.getEmbeddingModel();
-  const id = embeddingModelIdFor(settings);
+  const id = getEmbeddingModelName(settings);
   const batchSize = settings.provider === 'ollama' ? 4 : 16;
 
   // Cache the dim after the first round-trip so we don't re-probe per batch.
@@ -228,17 +260,6 @@ function adaptEmbeddingModel(settings: AISettings): ReedyEmbeddingModel {
       return embeddings;
     },
   };
-}
-
-function embeddingModelIdFor(settings: AISettings): string {
-  switch (settings.provider) {
-    case 'ollama':
-      return settings.ollamaEmbeddingModel || 'nomic-embed-text';
-    case 'ai-gateway':
-      return settings.aiGatewayEmbeddingModel || 'openai/text-embedding-3-small';
-    case 'openrouter':
-      return settings.openrouterEmbeddingModel || 'openai/text-embedding-3-small';
-  }
 }
 
 export { DEFAULT_TOP_K };

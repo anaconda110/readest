@@ -54,6 +54,13 @@ export interface ReedyAssistantProps {
   userId?: string;
   /** Wired by the notebook to `getView(bookKey)?.goTo(cfi)` on click. */
   onNavigateToCfi?: (cfi: string) => void;
+  /** Prompt queued by the shared AI analysis tabs after indexing completes. */
+  promptRequest?: { id: number; text: string } | null;
+  onPromptRequestHandled?: (id: number) => void;
+  /** Lets the outer five-tab shell enable analysis actions only when ready. */
+  onIndexingPhaseChange?: (indexed: boolean) => void;
+  /** Exposes the async index action to the search tab. */
+  onIndexActionChange?: (action: (() => Promise<void>) | null) => void;
 }
 
 /**
@@ -73,6 +80,10 @@ export function ReedyAssistant({
   readingContext,
   userId = 'local',
   onNavigateToCfi,
+  promptRequest = null,
+  onPromptRequestHandled,
+  onIndexingPhaseChange,
+  onIndexActionChange,
 }: ReedyAssistantProps) {
   const models = useMemo(() => createReedyModels(aiSettings), [aiSettings]);
 
@@ -284,6 +295,10 @@ export function ReedyAssistant({
     };
   }, [reedy, bookHash]);
 
+  useEffect(() => {
+    onIndexingPhaseChange?.(indexingPhase === 'indexed');
+  }, [indexingPhase, onIndexingPhaseChange]);
+
   // Reset the conversation log when the book or session changes.
   useEffect(() => {
     resetStore();
@@ -320,6 +335,11 @@ export function ReedyAssistant({
     }
   }, [reedy, bookDoc, bookHash, models.embedding]);
 
+  useEffect(() => {
+    onIndexActionChange?.(handleIndex);
+    return () => onIndexActionChange?.(null);
+  }, [handleIndex, onIndexActionChange]);
+
   const handleSend = useCallback(
     (text: string) => {
       if (!runtime) return;
@@ -332,6 +352,21 @@ export function ReedyAssistant({
     },
     [runtime, send, bookHash, activeSkill],
   );
+
+  const handledPromptIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (
+      !promptRequest ||
+      indexingPhase !== 'indexed' ||
+      !runtime ||
+      handledPromptIdRef.current === promptRequest.id
+    ) {
+      return;
+    }
+    handledPromptIdRef.current = promptRequest.id;
+    handleSend(promptRequest.text);
+    onPromptRequestHandled?.(promptRequest.id);
+  }, [handleSend, indexingPhase, onPromptRequestHandled, promptRequest, runtime]);
 
   if (!aiSettings.enabled) {
     return (

@@ -2,7 +2,7 @@ import type { BookDoc } from '@/libs/document';
 import { hybridSearch, indexBook as ragIndexBook, isBookIndexed } from '../ragService';
 import { aiStore } from '../storage/aiStore';
 import type { AISettings, ScoredChunk } from '../types';
-import type { BackendIndexOptions, RetrievalBackend } from './retrievalBackend';
+import type { BackendIndexOptions, RetrievalBackend, SearchBookResponse } from './retrievalBackend';
 
 /**
  * Thin RetrievalBackend façade around the legacy IndexedDB ragService so
@@ -35,6 +35,31 @@ export class LegacyIdbBackend implements RetrievalBackend {
 
   clearBook(bookHash: string): Promise<void> {
     return aiStore.clearBook(bookHash);
+  }
+
+  async searchBook(
+    query: string,
+    bookHash: string,
+    options: { topK: number; spoilerBoundPosition?: number },
+  ): Promise<SearchBookResponse> {
+    const chunks = await hybridSearch(
+      bookHash,
+      query,
+      this.settings,
+      options.topK,
+      options.spoilerBoundPosition,
+    );
+    return {
+      status: 'ok',
+      results: chunks.map((chunk) => ({
+        id: chunk.id,
+        text: chunk.text,
+        chapterTitle: chunk.chapterTitle || null,
+        sectionIndex: chunk.sectionIndex,
+        pageNumber: chunk.pageNumber,
+        score: chunk.score,
+      })),
+    };
   }
 
   searchForSystemPrompt(

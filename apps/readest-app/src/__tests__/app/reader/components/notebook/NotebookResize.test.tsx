@@ -91,7 +91,7 @@ vi.mock('@/components/Overlay', () => ({ Overlay: () => null }));
 vi.mock('@/hooks/useResponsiveSize', () => ({ useResponsiveSize: (size: number) => size }));
 vi.mock('@/app/reader/components/notebook/NotebookEditor', () => ({ default: () => null }));
 vi.mock('@/app/reader/components/notebook/NotebookTabNavigation', () => ({
-  default: () => null,
+  default: () => <div data-testid='notebook-tab-navigation' />,
 }));
 vi.mock('@/app/reader/components/notebook/AIAssistant', () => ({ default: () => null }));
 
@@ -158,6 +158,20 @@ describe('Notebook resizing', () => {
     expect(screen.queryByRole('group', { name: 'Notebook' })).toBeNull();
   });
 
+  test('hides the duplicate notebook navigation while the AI analysis rail is open', () => {
+    render(<Notebook />);
+
+    act(() => {
+      useNotebookStore.getState().setNotebookVisible(true);
+      useNotebookStore.getState().setNotebookActiveTab('ai');
+    });
+
+    expect(screen.queryByTestId('notebook-tab-navigation')).toBeNull();
+
+    act(() => useNotebookStore.getState().setNotebookActiveTab('notes'));
+    expect(screen.getByTestId('notebook-tab-navigation')).toBeTruthy();
+  });
+
   test('keeps the AI rail out of the mobile layout', () => {
     h.isMobile = true;
     render(<Notebook />);
@@ -165,10 +179,26 @@ describe('Notebook resizing', () => {
     expect(screen.queryByRole('button', { name: 'Expand AI panel' })).toBeNull();
   });
 
-  test('does not render the AI rail when the assistant is disabled', () => {
+  test('keeps the AI rail discoverable when the assistant is disabled', () => {
     h.settings.aiSettings.enabled = false;
     render(<Notebook />);
 
-    expect(screen.queryByRole('button', { name: 'Expand AI panel' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Expand AI panel' }));
+
+    expect(useNotebookStore.getState().isNotebookVisible).toBe(true);
+    expect(useNotebookStore.getState().notebookActiveTab).toBe('ai');
+  });
+
+  test('switches to AI from the attached rail while the notes panel is open', () => {
+    render(<Notebook />);
+
+    act(() => {
+      useNotebookStore.getState().setNotebookVisible(true);
+      useNotebookStore.getState().setNotebookActiveTab('notes');
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Expand AI panel' }));
+
+    expect(useNotebookStore.getState().isNotebookVisible).toBe(true);
+    expect(useNotebookStore.getState().notebookActiveTab).toBe('ai');
   });
 });

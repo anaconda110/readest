@@ -135,8 +135,10 @@ const Notebook: React.FC = () => {
     });
   };
 
+  const aiPanelExpanded = isNotebookVisible && notebookActiveTab === 'ai';
+
   const handleToggleAIRail = () => {
-    if (isNotebookVisible) {
+    if (aiPanelExpanded) {
       hideNotebook();
       return;
     }
@@ -191,12 +193,14 @@ const Notebook: React.FC = () => {
   const viewSettings = getViewSettings(sideBarBookKey);
   if (!bookData?.bookDoc) return null;
   const languageDir = getBookDirFromLanguage(bookData.bookDoc.metadata.language);
-  const aiEnabled = settings?.aiSettings?.enabled ?? false;
-  const showAIRail = !isMobile && aiEnabled && (!isNotebookVisible || notebookActiveTab === 'ai');
+  // Keep the desktop AI rail discoverable even before AI is enabled. The
+  // panel itself shows the setup action, so hiding the entry point here turns
+  // the feature into a dead end for first-time users.
+  const showAIRail = !isMobile;
 
   const aiRail = showAIRail ? (
     <NotebookAIRail
-      expanded={isNotebookVisible}
+      expanded={aiPanelExpanded}
       variant={isNotebookVisible ? 'attached' : 'floating'}
       onToggle={handleToggleAIRail}
       style={isNotebookVisible ? undefined : { right: safeAreaInsets?.right || 0 }}
@@ -282,6 +286,7 @@ const Notebook: React.FC = () => {
             </div>
           )}
           <NotebookHeader
+            title={notebookActiveTab === 'ai' ? _('AI Analysis') : undefined}
             isPinned={isNotebookPinned}
             isFullScreenMobile={isMobile && isFullHeightInMobile}
             handleClose={hideNotebook}
@@ -290,7 +295,13 @@ const Notebook: React.FC = () => {
         </div>
         {notebookActiveTab === 'ai' ? (
           <div className='flex min-h-0 flex-1 flex-col'>
-            <AIAssistant key={activeConversationId ?? 'new'} bookKey={sideBarBookKey} />
+            <AIAssistant
+              key={activeConversationId ?? 'new'}
+              bookKey={sideBarBookKey}
+              excerpts={excerptNotes}
+              handleOpenAnnotations={handleOpenAnnotations}
+              onDeleteExcerpt={handleDeleteExcerpt}
+            />
           </div>
         ) : (
           <NotebookEditor
@@ -300,12 +311,14 @@ const Notebook: React.FC = () => {
             onDeleteExcerpt={handleDeleteExcerpt}
           />
         )}
-        <div
-          className='shrink-0'
-          style={{ paddingBottom: `${(safeAreaInsets?.bottom || 0) / 2}px` }}
-        >
-          <NotebookTabNavigation activeTab={notebookActiveTab} onTabChange={handleTabChange} />
-        </div>
+        {notebookActiveTab !== 'ai' && (
+          <div
+            className='shrink-0'
+            style={{ paddingBottom: `${(safeAreaInsets?.bottom || 0) / 2}px` }}
+          >
+            <NotebookTabNavigation activeTab={notebookActiveTab} onTabChange={handleTabChange} />
+          </div>
+        )}
       </div>
     </>
   );

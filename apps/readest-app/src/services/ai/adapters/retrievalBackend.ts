@@ -5,6 +5,25 @@ import type { ReedySourceStore } from './reedySourceStore';
 
 export type RetrievalBackendKind = 'legacy-idb' | 'reedy';
 
+export type SearchStatus = 'ok' | 'not_indexed' | 'empty_index' | 'stale_index' | 'degraded';
+
+export interface SearchBookResult {
+  id: string;
+  text: string;
+  chapterTitle: string | null;
+  sectionIndex: number;
+  score: number;
+  /** Reedy passages expose a precise CFI; legacy chunks only expose a page. */
+  cfi?: string;
+  pageNumber?: number;
+}
+
+export interface SearchBookResponse {
+  results: SearchBookResult[];
+  status: SearchStatus;
+  reason?: string;
+}
+
 export interface BackendIndexOptions {
   onProgress?: (progress: EmbeddingProgress) => void;
   signal?: AbortSignal;
@@ -30,6 +49,13 @@ export interface RetrievalBackend {
   isIndexed(bookHash: string): Promise<boolean>;
   indexBook(bookDoc: BookDoc, bookHash: string, options?: BackendIndexOptions): Promise<void>;
   clearBook(bookHash: string): Promise<void>;
+
+  /** User-facing semantic/keyword search used by the AI analysis panel. */
+  searchBook(
+    query: string,
+    bookHash: string,
+    options: { topK: number; spoilerBoundPosition?: number },
+  ): Promise<SearchBookResponse>;
 
   /**
    * Legacy IDB path only. Returns top-K chunks the adapter folds into the
@@ -69,4 +95,16 @@ export function selectBackend(args: {
     return args.reedy;
   }
   return args.legacy;
+}
+
+/** The active embedding model shown in the AI panel's engine hint. */
+export function getEmbeddingModelName(settings: AISettings): string {
+  switch (settings.provider) {
+    case 'ollama':
+      return settings.ollamaEmbeddingModel || 'nomic-embed-text';
+    case 'ai-gateway':
+      return settings.aiGatewayEmbeddingModel || 'openai/text-embedding-3-small';
+    case 'openrouter':
+      return settings.openrouterEmbeddingModel || 'openai/text-embedding-3-small';
+  }
 }
