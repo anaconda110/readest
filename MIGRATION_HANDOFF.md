@@ -3,8 +3,8 @@
 - 更新日期：2026-10-26
 - 仓库：`/home/oraw/projects/00.Program/readest`
 - 分支：`feat/reading-statistics`
-- 当前基线：`f2e2c46b feat(reader): add collapsible AI rail to notebook`
-- 当前重点：确保 AI 未启用时右侧 rail 仍可见，并可进入五页签与 AI 设置。
+- 当前基线：`353b04c9 fix(reader): align AI entry with sidebar toggle`
+- 当前重点：修复打开右侧 AI 面板时 `@assistant-ui/react` runtime 初始化崩溃。
 - 提交策略：只允许本地 commit，**禁止 push**。
 
 ## 1. 任务目标
@@ -105,14 +105,46 @@ Reedy agent runtime：
 
 已修复 zh-CN / zh-TW 中重复的 `Section {{index}}` key。
 
+### 2.6 AI runtime 初始化崩溃修复
+
+用户实机截图显示，点击右侧 AI 入口后整页进入 `Oops!` 错误边界，错误为：
+
+```text
+TypeError: Cannot set properties of undefined (setting '_getInitializePromise')
+at __internal_setGetInitializePromise
+```
+
+根因位于 `@assistant-ui/react@0.11.58`：`RemoteThreadListHookInstanceManager` 从 runtime core 取出 `__internal_setGetInitializePromise` 后直接调用，丢失了方法接收者，导致方法内部 `this` 为 `undefined`。
+
+保持现有依赖版本，新增最小兼容补丁：
+
+- `patches/@assistant-ui__react@0.11.58.patch`
+- `pnpm-workspace.yaml` 的 `patchedDependencies`
+- `pnpm-lock.yaml` 的 patch hash
+
+核心修复：
+
+```diff
+-setGetInitializePromise(() => initPromiseRef.current);
++setGetInitializePromise.call(runtimeCore, () => initPromiseRef.current);
+```
+
+新增回归测试：
+
+```text
+apps/readest-app/src/__tests__/app/reader/components/notebook/AIAssistantRuntime.test.tsx
+```
+
+该测试在打补丁前可复现同一 `_getInitializePromise` 异常，打补丁后通过。
+
 ## 3. 测试与静态检查
 
 截至本交接更新时已通过：
 
 ```text
-AIAnalysisPanel + NotebookResize + retrievalBackend + TauriChatAdapter
+AIAssistantRuntime + AIAnalysisPanel + NotebookResize + HeaderBar
 4 test files passed
-37 tests passed
+34 tests passed
 
 NotebookAIRail.browser.test.tsx
 1 test file passed
@@ -157,23 +189,30 @@ pnpm exec tauri build --target x86_64-pc-windows-msvc --bundles nsis --config C:
 C:/Users/Tom/AppData/Local/Temp/readest-win-build-20261026/target/x86_64-pc-windows-msvc/release/bundle/nsis/
 ```
 
-2026-10-26 02:45 已完成 Windows x64 构建，并复制为：
+2026-10-26 12:57 已完成包含 runtime 修复的 Windows x64 构建，并复制为：
 
 ```text
-C:/Users/Tom/Downloads/Readest_0.12.16_x64-ai-rail-20261026-024529.exe
-SHA-256: ffbcddaf1b1868ed9e7988c0e7f68e86332b674878d9725b59c5a290aa57844e
+C:/Users/Tom/Downloads/Readest_0.12.16_x64-ai-runtime-fix-20261026-125750.exe
+SHA-256: 217d06552bebfbf06958ef91e195fd0dc57dd722875304dd21bb79f9f9a18ad9
 ```
 
-当前会话为中等权限，NSIS 系统级静默安装触发 UAC，无法自动确认。为保证现有环境立即使用最新版本，已将构建产物中的 `readest.exe`（SHA-256 `2a578529fcce7e77bf5721d624a1f10b9ca10ebb26be4aa48b53db387171bcb9`）覆盖到：
+为保证现有环境立即使用最新版本，已先关闭旧进程，再将构建产物中的 `Readest.exe` 覆盖到：
 
 ```text
 D:\Program Files\Readest\Readest.exe
 ```
 
+构建产物与安装目录可执行文件 SHA-256 均为：
+
+```text
+8cf3bd6934d7ab26f6b84841c8fe23c27238e0f1533e012bee68620c1a959960
+```
+
 已保留覆盖前备份：
 
 ```text
-C:/Users/Tom/AppData/Local/Temp/Readest-before-ai-rail-20261026-0249.exe
+C:/Users/Tom/AppData/Local/Temp/Readest-before-ai-runtime-fix-20261026-125750.exe
+SHA-256: 73585055ba4db8ff8511782948d99d487b0ad8c107abb0117587b2d1a09055b5
 ```
 
 ## 5. 验证状态与待办
@@ -182,13 +221,23 @@ C:/Users/Tom/AppData/Local/Temp/Readest-before-ai-rail-20261026-0249.exe
 
 - 最新源码已同步到 Windows 构建副本。
 - Tauri build 已重新生成 `out` 并完成 NSIS 打包。
+- 已确认两个阅读器前端 chunk 均编译为带接收者的调用：
+
+```text
+"function"==typeof t&&t.call(e,()=>l.current)
+```
+
 - 现有安装目录的可执行文件已替换为最新构建，版本哈希一致。
+- 修复版 Readest 已重新启动。
 - 已确认用户配置中 `aiSettings.enabled=false`；旧版会因此隐藏整个 rail，新构建已移除此前提。
 - 已确认构建产物包含 `Expand AI panel` / `Collapse AI panel`，不是仅源码修改。
-- 2026-10-26 02:54 复核时 Windows 前台为 `LockApp.exe`，锁屏状态下的实机截图无法用于 UI 验证。
 
-仍需在可交互桌面解锁后实机确认：
+本轮 Computer Use 初始化返回 `sandboxCwd is not a local file URI`，无法自动接管 Windows 窗口完成点击复核；该限制不影响补丁、回归测试和安装包构建结果。
 
+仍需在可交互桌面点击右侧 AI 入口实机确认：
+
+- 不再出现 `Oops!` / `_getInitializePromise` 错误。
+- 右侧面板可展开、再次点击可收起。
 - 左目录与右 AI 面板同时展开。
 - 五个页签完整且密度接近参考图。
 - 问答发送正常。
@@ -205,25 +254,11 @@ C:/Users/Tom/AppData/Local/Temp/Readest-before-ai-rail-20261026-0249.exe
 
 ```bash
 git add MIGRATION_HANDOFF.md \
-  apps/readest-app/public/locales/en/translation.json \
-  apps/readest-app/public/locales/zh-CN/translation.json \
-  apps/readest-app/public/locales/zh-TW/translation.json \
-  apps/readest-app/src/app/reader/components/notebook/AIAnalysisPanel.tsx \
-  apps/readest-app/src/app/reader/components/notebook/AIAssistant.tsx \
-  apps/readest-app/src/app/reader/components/notebook/Header.tsx \
-  apps/readest-app/src/app/reader/components/notebook/Notebook.tsx \
-  apps/readest-app/src/components/settings/SettingsDialog.tsx \
-  apps/readest-app/src/services/ai/adapters/LegacyIdbBackend.ts \
-  apps/readest-app/src/services/ai/adapters/ReedyBackend.ts \
-  apps/readest-app/src/services/ai/adapters/index.ts \
-  apps/readest-app/src/services/ai/adapters/retrievalBackend.ts \
-  apps/readest-app/src/services/reedy/ui/ReedyAssistant.tsx \
-  apps/readest-app/src/__tests__/app/reader/components/notebook/AIAnalysisPanel.test.tsx \
-  apps/readest-app/src/__tests__/app/reader/components/notebook/NotebookAIRail.browser.test.tsx \
-  apps/readest-app/src/__tests__/app/reader/components/notebook/NotebookResize.test.tsx \
-  apps/readest-app/src/__tests__/reedy/TauriChatAdapter.test.ts \
-  apps/readest-app/src/__tests__/reedy/retrievalBackend.test.ts
-git commit -m "feat(reader): reproduce AI analysis rail"
+  pnpm-lock.yaml \
+  pnpm-workspace.yaml \
+  patches/@assistant-ui__react@0.11.58.patch \
+  apps/readest-app/src/__tests__/app/reader/components/notebook/AIAssistantRuntime.test.tsx
+git commit -m "fix(reader): patch assistant runtime initialization"
 ```
 
 提交后再次确认没有意外包含 submodule 检出状态或其他无关文件。

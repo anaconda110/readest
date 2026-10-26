@@ -1,0 +1,26 @@
+diff --git a/dist/legacy-runtime/runtime-cores/remote-thread-list/RemoteThreadListHookInstanceManager.js b/dist/legacy-runtime/runtime-cores/remote-thread-list/RemoteThreadListHookInstanceManager.js
+index 0000000..0000000 100644
+--- a/dist/legacy-runtime/runtime-cores/remote-thread-list/RemoteThreadListHookInstanceManager.js
++++ b/dist/legacy-runtime/runtime-cores/remote-thread-list/RemoteThreadListHookInstanceManager.js
+@@ -79,7 +79,7 @@ export const useRemoteThreadListRuntime = (options) => {
+             const runtimeCore = threadBinding.getState();
+             const setGetInitializePromise = runtimeCore["__internal_setGetInitializePromise"];
+             if (typeof setGetInitializePromise === "function") {
+-                setGetInitializePromise(() => initPromiseRef.current);
++                setGetInitializePromise.call(runtimeCore, () => initPromiseRef.current);
+             }
+         }, [threadBinding]);
+         useEffect(() => {
+diff --git a/src/legacy-runtime/runtime-cores/remote-thread-list/RemoteThreadListHookInstanceManager.tsx b/src/legacy-runtime/runtime-cores/remote-thread-list/RemoteThreadListHookInstanceManager.tsx
+index 0000000..0000000 100644
+--- a/src/legacy-runtime/runtime-cores/remote-thread-list/RemoteThreadListHookInstanceManager.tsx
++++ b/src/legacy-runtime/runtime-cores/remote-thread-list/RemoteThreadListHookInstanceManager.tsx
+@@ -112,7 +112,7 @@ export const useRemoteThreadListRuntime = (
+         "__internal_setGetInitializePromise"
+       ];
+       if (typeof setGetInitializePromise === "function") {
+-        setGetInitializePromise(() => initPromiseRef.current);
++        setGetInitializePromise.call(runtimeCore, () => initPromiseRef.current);
+       }
+     }, [threadBinding]);
+ 
