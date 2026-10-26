@@ -67,16 +67,26 @@ const useBookShortcuts = ({ sideBarBookKey, bookKeys }: UseBookShortcutsProps) =
   const toggleScrollMode = () => {
     const viewSettings = getViewSettings(sideBarBookKey ?? '');
     if (viewSettings && sideBarBookKey) {
-      viewSettings.scrolled = !viewSettings.scrolled;
+      const enabled = !viewSettings.scrolled;
+      saveViewSettings(envConfig, sideBarBookKey, 'scrolled', enabled, true, false);
+      if (enabled) {
+        // Continuous Scroll means one vertical flow through the whole book,
+        // not the legacy single-section scrolled mode.
+        saveViewSettings(envConfig, sideBarBookKey, 'scrolledDirection', 'vertical', true, false);
+        saveViewSettings(envConfig, sideBarBookKey, 'noContinuousScroll', false, true, false);
+      }
       // Webtoon Mode requires scrolled flow; leaving scrolled exits Webtoon Mode
       // and restores the default page gap (mirror the View menu's behavior).
-      if (!viewSettings.scrolled && viewSettings.webtoonMode) {
-        viewSettings.webtoonMode = false;
+      if (!enabled && viewSettings.webtoonMode) {
+        saveViewSettings(envConfig, sideBarBookKey, 'webtoonMode', false, true, false);
         getView(sideBarBookKey)?.renderer.setAttribute('scroll-gap', getScrollGapAttr(false));
       }
-      setViewSettings(sideBarBookKey, viewSettings!);
-      const flowMode = viewSettings.scrolled ? 'scrolled' : 'paginated';
-      getView(sideBarBookKey)?.renderer.setAttribute('flow', flowMode);
+      const renderer = getView(sideBarBookKey)?.renderer;
+      renderer?.setAttribute('flow', enabled ? 'scrolled' : 'paginated');
+      if (enabled) {
+        renderer?.setAttribute('scroll-direction', 'vertical');
+        renderer?.removeAttribute('no-continuous-scroll');
+      }
     }
     return true;
   };

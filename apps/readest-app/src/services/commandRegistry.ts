@@ -448,8 +448,8 @@ const colorPanelItems = [
 const controlPanelItems = [
   {
     id: 'settings.control.scrolledMode',
-    labelKey: _('Scrolled Mode'),
-    keywords: ['scroll', 'scrolled', 'mode', 'paginate', 'continuous'],
+    labelKey: _('Continuous Scroll'),
+    keywords: ['scroll', 'scrolled', 'mode', 'paginate', 'continuous', 'full', 'book', 'whole'],
     section: 'Scroll',
   },
   {

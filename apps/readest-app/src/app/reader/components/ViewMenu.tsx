@@ -73,6 +73,9 @@ const ViewMenu: React.FC<ViewMenuProps> = ({
   const [scrolledDirection, setScrolledDirection] = useState(
     viewSettings!.scrolledDirection ?? 'vertical',
   );
+  const [noContinuousScroll, setNoContinuousScroll] = useState(
+    viewSettings!.noContinuousScroll ?? false,
+  );
   const [webtoonMode, setWebtoonMode] = useState(viewSettings!.webtoonMode ?? false);
   const [lockHorizontalPan, setLockHorizontalPan] = useState(
     viewSettings!.lockHorizontalPan ?? false,
@@ -99,7 +102,14 @@ const ViewMenu: React.FC<ViewMenuProps> = ({
   const decreaseContrast = () =>
     setContrast((prev) => Math.max(prev - CONTRAST_STEP, MIN_CONTRAST));
   const resetContrast = () => setContrast(100);
-  const toggleScrolledMode = () => setScrolledMode(!isScrolledMode);
+  const toggleScrolledMode = () => {
+    const enabled = !isScrolledMode;
+    setScrolledMode(enabled);
+    if (enabled) {
+      setScrolledDirection('vertical');
+      setNoContinuousScroll(false);
+    }
+  };
   const toggleWebtoonMode = () => setWebtoonMode(!webtoonMode);
   const toggleLockHorizontalPan = () => setLockHorizontalPan(!lockHorizontalPan);
   const toggleParagraphMode = () => {
@@ -190,16 +200,14 @@ const ViewMenu: React.FC<ViewMenuProps> = ({
 
   useEffect(() => {
     if (scrolledDirection === (viewSettings.scrolledDirection ?? 'vertical')) return;
-    viewSettings.scrolledDirection = scrolledDirection;
-    getView(bookKey)?.renderer.setAttribute('scroll-direction', scrolledDirection);
-    setViewSettings(bookKey, viewSettings);
     saveViewSettings(envConfig, bookKey, 'scrolledDirection', scrolledDirection, true, false);
+    getView(bookKey)?.renderer.setAttribute('scroll-direction', scrolledDirection);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrolledDirection]);
 
   useEffect(() => {
     if (isScrolledMode === viewSettings!.scrolled) return;
-    viewSettings!.scrolled = isScrolledMode;
+    saveViewSettings(envConfig, bookKey, 'scrolled', isScrolledMode, true, false);
     if (!isScrolledMode && webtoonMode) setWebtoonMode(false);
     getView(bookKey)?.renderer.setAttribute('flow', isScrolledMode ? 'scrolled' : 'paginated');
     getView(bookKey)?.renderer.setAttribute(
@@ -214,9 +222,19 @@ const ViewMenu: React.FC<ViewMenuProps> = ({
     // three pages slide at once.
     const view = getView(bookKey);
     if (view) applyPageTurnAttributes(view, viewSettings!, !!bookData?.isFixedLayout);
-    setViewSettings(bookKey, viewSettings!);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isScrolledMode]);
+
+  useEffect(() => {
+    if (noContinuousScroll === (viewSettings.noContinuousScroll ?? false)) return;
+    saveViewSettings(envConfig, bookKey, 'noContinuousScroll', noContinuousScroll, true, false);
+    if (noContinuousScroll) {
+      getView(bookKey)?.renderer.setAttribute('no-continuous-scroll', '');
+    } else {
+      getView(bookKey)?.renderer.removeAttribute('no-continuous-scroll');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noContinuousScroll]);
 
   useEffect(() => {
     if (webtoonMode === viewSettings.webtoonMode) return;
@@ -506,7 +524,7 @@ const ViewMenu: React.FC<ViewMenuProps> = ({
 
       {!bookData.isFixedLayout && (
         <MenuItem
-          label={_('Scrolled Mode')}
+          label={_('Continuous Scroll')}
           shortcut='Shift+J'
           Icon={isScrolledMode ? MdCheck : undefined}
           onClick={toggleScrolledMode}
