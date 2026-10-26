@@ -97,7 +97,18 @@ vi.mock('@/app/reader/components/notebook/AIAssistant', () => ({ default: () => 
 
 import { flushNotebookDocument } from '@/app/reader/hooks/useNotebookDocumentCoordinator';
 import Notebook from '@/app/reader/components/notebook/Notebook';
+import NotebookAIToggler from '@/app/reader/components/notebook/NotebookAIToggler';
 import { useNotebookStore } from '@/store/notebookStore';
+
+const NotebookWithHeaderToggle = () => {
+  const isNotebookVisible = useNotebookStore((state) => state.isNotebookVisible);
+  return (
+    <>
+      <Notebook />
+      {!isNotebookVisible && <NotebookAIToggler bookKey='book-1' />}
+    </>
+  );
+};
 
 describe('Notebook resizing', () => {
   beforeEach(() => {
@@ -142,8 +153,8 @@ describe('Notebook resizing', () => {
     expect(useNotebookStore.getState().notebookWidth).toBe('35%');
   });
 
-  test('opens the AI tab from the desktop rail and closes it again', () => {
-    render(<Notebook />);
+  test('opens the AI tab from the desktop header toggle and closes it again', () => {
+    render(<NotebookWithHeaderToggle />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Expand AI panel' }));
 
@@ -158,7 +169,7 @@ describe('Notebook resizing', () => {
     expect(screen.queryByRole('group', { name: 'Notebook' })).toBeNull();
   });
 
-  test('hides the duplicate notebook navigation while the AI analysis rail is open', () => {
+  test('hides the duplicate notebook navigation while the AI analysis panel is open', () => {
     render(<Notebook />);
 
     act(() => {
@@ -172,16 +183,22 @@ describe('Notebook resizing', () => {
     expect(screen.getByTestId('notebook-tab-navigation')).toBeTruthy();
   });
 
-  test('keeps the AI rail out of the mobile layout', () => {
+  test('keeps the AI toggle out of the mobile layout', () => {
     h.isMobile = true;
     render(<Notebook />);
 
+    act(() => {
+      useNotebookStore.getState().setNotebookVisible(true);
+      useNotebookStore.getState().setNotebookActiveTab('ai');
+    });
+
     expect(screen.queryByRole('button', { name: 'Expand AI panel' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Collapse AI panel' })).toBeNull();
   });
 
-  test('keeps the AI rail discoverable when the assistant is disabled', () => {
+  test('keeps the AI toggle discoverable when the assistant is disabled', () => {
     h.settings.aiSettings.enabled = false;
-    render(<Notebook />);
+    render(<NotebookAIToggler bookKey='book-1' />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Expand AI panel' }));
 
@@ -189,7 +206,7 @@ describe('Notebook resizing', () => {
     expect(useNotebookStore.getState().notebookActiveTab).toBe('ai');
   });
 
-  test('switches to AI from the attached rail while the notes panel is open', () => {
+  test('switches to AI from the panel header while the notes panel is open', () => {
     render(<Notebook />);
 
     act(() => {

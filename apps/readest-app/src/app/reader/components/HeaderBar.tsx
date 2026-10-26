@@ -9,6 +9,7 @@ import { useThemeStore } from '@/store/themeStore';
 import { useReaderStore } from '@/store/readerStore';
 import { useBookDataStore } from '@/store/bookDataStore';
 import { useSidebarStore } from '@/store/sidebarStore';
+import { useNotebookStore } from '@/store/notebookStore';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useTrafficLightStore } from '@/store/trafficLightStore';
@@ -31,6 +32,7 @@ import QuickActionMenu from './annotator/QuickActionMenu';
 import SidebarToggler from './SidebarToggler';
 import BookmarkToggler from './BookmarkToggler';
 import NotebookToggler from './NotebookToggler';
+import NotebookAIToggler from './notebook/NotebookAIToggler';
 import TranslationToggler from './TranslationToggler';
 import ViewMenu from './ViewMenu';
 import SyncInfoDialog from './SyncInfoDialog';
@@ -67,6 +69,7 @@ const HeaderBar: React.FC<HeaderBarProps> = ({
   const { bookKeys, hoveredBookKey } = useReaderStore();
   const { isDarkMode, systemUIVisible, statusBarHeight, isIPhoneDuo } = useThemeStore();
   const { isSideBarVisible, getIsSideBarVisible } = useSidebarStore();
+  const { isNotebookVisible } = useNotebookStore();
   const { getView, getViewSettings, setHoveredBookKey } = useReaderStore();
   const { getBookData, getConfig } = useBookDataStore();
   const viewSettings = getViewSettings(bookKey);
@@ -373,6 +376,11 @@ const HeaderBar: React.FC<HeaderBarProps> = ({
                 onClose={() => setIsMetaHashDialogOpen(false)}
               />
             </ModalPortal>
+          )}
+          {!isNotebookVisible && (
+            <div className='hidden sm:flex'>
+              <NotebookAIToggler bookKey={bookKey} />
+            </div>
           )}
           <WindowButtons
             className='window-buttons flex items-center'

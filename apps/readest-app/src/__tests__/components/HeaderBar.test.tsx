@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import HeaderBar from '@/app/reader/components/HeaderBar';
+import { useNotebookStore } from '@/store/notebookStore';
 
 // jsdom ships no ResizeObserver, and HeaderBar constructs one to track its own
 // width. Same stub pattern as popup-resting-triangle.test.
@@ -102,6 +103,7 @@ const renderHeader = () =>
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', MockResizeObserver);
   useEnvMock.mockReturnValue({ envConfig: {}, appService: { isMobile: true } });
+  useNotebookStore.setState({ isNotebookVisible: false, notebookActiveTab: 'notes' });
 });
 
 afterEach(() => {
@@ -130,6 +132,20 @@ describe('HeaderBar sidebar toggle', () => {
     setViewport(1440, 900);
     renderHeader();
     expect(screen.getByText('sidebar-toggler')).toBeTruthy();
+  });
+});
+
+describe('HeaderBar AI toggle', () => {
+  it('shows the AI entry beside the other desktop tools and hides it while the panel is open', () => {
+    useEnvMock.mockReturnValue({ envConfig: {}, appService: { isMobile: false } });
+    setViewport(1440, 900);
+    renderHeader();
+
+    expect(screen.getByRole('button', { name: 'Expand AI panel' })).toBeTruthy();
+
+    act(() => useNotebookStore.getState().setNotebookVisible(true));
+
+    expect(screen.queryByRole('button', { name: 'Expand AI panel' })).toBeNull();
   });
 });
 

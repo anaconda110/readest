@@ -10,9 +10,10 @@ const NotebookHeader: React.FC<{
   title?: string;
   isPinned: boolean;
   isFullScreenMobile?: boolean;
+  aiToggle?: React.ReactNode;
   handleClose: () => void;
   handleTogglePin: () => void;
-}> = ({ title, isPinned, isFullScreenMobile = false, handleClose, handleTogglePin }) => {
+}> = ({ title, isPinned, isFullScreenMobile = false, aiToggle, handleClose, handleTogglePin }) => {
   const _ = useTranslation();
   const iconSize15 = useResponsiveSize(15);
   const iconSize18 = useResponsiveSize(18);
@@ -44,6 +45,7 @@ const NotebookHeader: React.FC<{
         >
           {isFullScreenMobile ? <MdClose size={iconSize18} /> : <MdArrowBackIosNew />}
         </button>
+        {aiToggle && <div className='ms-auto hidden sm:flex'>{aiToggle}</div>}
       </div>
     </div>
   );

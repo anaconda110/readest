@@ -26,7 +26,7 @@ import {
 } from '../../hooks/useNotebookDocumentCoordinator';
 import AIAssistant from './AIAssistant';
 import NotebookHeader from './Header';
-import NotebookAIRail from './NotebookAIRail';
+import NotebookAIToggler from './NotebookAIToggler';
 import NotebookEditor from './NotebookEditor';
 import NotebookTabNavigation from './NotebookTabNavigation';
 
@@ -135,17 +135,6 @@ const Notebook: React.FC = () => {
     });
   };
 
-  const aiPanelExpanded = isNotebookVisible && notebookActiveTab === 'ai';
-
-  const handleToggleAIRail = () => {
-    if (aiPanelExpanded) {
-      hideNotebook();
-      return;
-    }
-    handleTabChange('ai');
-    setNotebookVisible(true);
-  };
-
   const handleOpenAnnotations = () => {
     if (!sideBarBookKey) return;
     setSearchBarVisible(false);
@@ -193,21 +182,7 @@ const Notebook: React.FC = () => {
   const viewSettings = getViewSettings(sideBarBookKey);
   if (!bookData?.bookDoc) return null;
   const languageDir = getBookDirFromLanguage(bookData.bookDoc.metadata.language);
-  // Keep the desktop AI rail discoverable even before AI is enabled. The
-  // panel itself shows the setup action, so hiding the entry point here turns
-  // the feature into a dead end for first-time users.
-  const showAIRail = !isMobile;
-
-  const aiRail = showAIRail ? (
-    <NotebookAIRail
-      expanded={aiPanelExpanded}
-      variant={isNotebookVisible ? 'attached' : 'floating'}
-      onToggle={handleToggleAIRail}
-      style={isNotebookVisible ? undefined : { right: safeAreaInsets?.right || 0 }}
-    />
-  ) : null;
-
-  if (!isNotebookVisible) return aiRail;
+  if (!isNotebookVisible) return null;
 
   return (
     <>
@@ -255,7 +230,6 @@ const Notebook: React.FC = () => {
             }
           }
         `}</style>
-        {aiRail}
         <div
           className={clsx(
             'drag-bar absolute -left-2 top-0 h-full w-0.5 cursor-col-resize bg-transparent p-2',
@@ -289,6 +263,7 @@ const Notebook: React.FC = () => {
             title={notebookActiveTab === 'ai' ? _('AI Analysis') : undefined}
             isPinned={isNotebookPinned}
             isFullScreenMobile={isMobile && isFullHeightInMobile}
+            aiToggle={!isMobile ? <NotebookAIToggler bookKey={sideBarBookKey} /> : undefined}
             handleClose={hideNotebook}
             handleTogglePin={handleTogglePin}
           />
