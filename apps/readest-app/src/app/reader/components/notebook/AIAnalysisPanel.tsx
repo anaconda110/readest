@@ -179,9 +179,21 @@ export function AIAnalysisIndexState({
 }: AIAnalysisIndexStateProps) {
   const _ = useTranslation();
   const progressPercent =
-    progress?.phase === 'embedding' && progress.total > 0
-      ? Math.round((progress.current / progress.total) * 100)
-      : 0;
+    progress && progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
+  const progressLabel =
+    progress?.phase === 'chunking'
+      ? _('Analyzing chapters...')
+      : progress?.phase === 'embedding'
+        ? _('Generating embeddings...')
+        : _('Preparing...');
+  const progressCount = progress
+    ? progress.phase === 'chunking'
+      ? _('{{current}} / {{total}} sections', {
+          current: progress.current,
+          total: progress.total,
+        })
+      : `${progress.current} / ${progress.total} ${_('chunks')}`
+    : null;
 
   if (isLoading || isIndexing) {
     return (
@@ -192,19 +204,32 @@ export function AIAnalysisIndexState({
             {isLoading ? _('Checking index status...') : _('Indexing book...')}
           </p>
           {!isLoading && (
-            <p className='text-muted-foreground text-xs'>
-              {progress?.phase === 'embedding'
-                ? `${progress.current} / ${progress.total} ${_('chunks')}`
-                : _('Preparing...')}
-            </p>
+            <>
+              <p className='text-muted-foreground text-xs'>{progressLabel}</p>
+              {progressCount && (
+                <p className='text-muted-foreground/80 mt-0.5 text-xs'>{progressCount}</p>
+              )}
+            </>
           )}
         </div>
         {!isLoading && (
-          <div className='bg-muted h-1.5 w-32 overflow-hidden rounded-full'>
+          <div className='flex items-center gap-2'>
             <div
-              className='bg-primary h-full transition-all duration-300'
-              style={{ width: `${progressPercent}%` }}
-            />
+              className='bg-muted h-1.5 w-32 overflow-hidden rounded-full'
+              role='progressbar'
+              aria-label={progressLabel}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={progressPercent}
+            >
+              <div
+                className='bg-primary h-full transition-all duration-300'
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+            <span className='text-muted-foreground w-9 text-end font-mono text-[11px]'>
+              {progressPercent}%
+            </span>
           </div>
         )}
       </div>
@@ -265,6 +290,8 @@ interface AIAnalysisSearchProps {
   onResultClick: (cfi?: string, pageNumber?: number) => void;
   onIndex?: () => void | Promise<void>;
   isIndexing?: boolean;
+  /** Shared parent state so an index completed in another tab enables search immediately. */
+  indexedOverride?: boolean | null;
 }
 
 /** Semantic/keyword search over the same retrieval index used by Q&A. */
@@ -276,6 +303,7 @@ export function AIAnalysisSearch({
   onResultClick,
   onIndex,
   isIndexing = false,
+  indexedOverride,
 }: AIAnalysisSearchProps) {
   const _ = useTranslation();
   const [query, setQuery] = useState('');
@@ -289,6 +317,15 @@ export function AIAnalysisSearch({
   const [indexCheckError, setIndexCheckError] = useState(false);
   const [isIndexingLocally, setIsIndexingLocally] = useState(false);
   const isIndexingSearch = isIndexing || isIndexingLocally;
+
+  useEffect(() => {
+    if (indexedOverride === true) {
+      setIndexed(true);
+      setIndexCheckError(false);
+    } else if (indexedOverride === false) {
+      setIndexed(false);
+    }
+  }, [indexedOverride]);
 
   useEffect(() => {
     let alive = true;

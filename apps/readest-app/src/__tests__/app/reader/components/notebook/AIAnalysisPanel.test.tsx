@@ -3,13 +3,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   AIAnalysisDisabledState,
+  AIAnalysisIndexState,
   AIAnalysisPanel,
   AIAnalysisSearch,
 } from '@/app/reader/components/notebook/AIAnalysisPanel';
 import type { RetrievalBackend } from '@/services/ai/adapters';
 
 vi.mock('@/hooks/useTranslation', () => ({
-  useTranslation: () => (value: string) => value,
+  useTranslation: () => (value: string, options?: Record<string, number | string>) => {
+    if (!options) return value;
+    return Object.entries(options).reduce(
+      (result, [key, replacement]) => result.replaceAll(`{{${key}}}`, String(replacement)),
+      value,
+    );
+  },
 }));
 
 afterEach(cleanup);
@@ -119,7 +126,47 @@ describe('AIAnalysisPanel', () => {
   });
 });
 
+describe('AIAnalysisIndexState', () => {
+  it('shows chapter progress while a book is being prepared for indexing', () => {
+    render(
+      <AIAnalysisIndexState
+        isLoading={false}
+        isIndexing={true}
+        progress={{ phase: 'chunking', current: 2, total: 10 }}
+        onIndex={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Analyzing chapters...')).toBeTruthy();
+    expect(screen.getByText('2 / 10 sections')).toBeTruthy();
+    expect(screen.getByText('20%')).toBeTruthy();
+  });
+});
+
 describe('AIAnalysisSearch', () => {
+  it('uses the shared indexed state after indexing completes in another tab', async () => {
+    const backend = fakeBackend({ isIndexed: vi.fn(async () => false) });
+    const props = {
+      backend,
+      bookHash: 'book-1',
+      currentPage: 0,
+      spoilerProtection: false,
+      onResultClick: vi.fn(),
+    };
+
+    const { rerender } = render(<AIAnalysisSearch {...props} indexedOverride={false} />);
+    expect(await screen.findByText('Index this book to enable semantic search')).toBeTruthy();
+
+    rerender(<AIAnalysisSearch {...props} indexedOverride={true} />);
+
+    await waitFor(() =>
+      expect(screen.queryByText('Index this book to enable semantic search')).toBeNull(),
+    );
+    expect(
+      screen.getByRole('searchbox', { name: 'Search this book' }).hasAttribute('disabled'),
+    ).toBe(false);
+  });
+
   it('shows the indexing prompt when the book is not indexed', async () => {
     const backend = fakeBackend({ isIndexed: vi.fn(async () => false) });
     render(

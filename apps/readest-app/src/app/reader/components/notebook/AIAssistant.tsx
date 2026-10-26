@@ -666,7 +666,9 @@ const ReedyAgentAssistantBridge = ({
   }, []);
 
   const handleSearchIndex = useCallback(async () => {
-    await indexActionRef.current?.();
+    const action = indexActionRef.current;
+    if (!action) throw new Error('Reedy indexing is not ready');
+    await action();
   }, []);
 
   if (!aiSettings || !appService || !bookData?.bookDoc) return null;
@@ -707,6 +709,7 @@ const ReedyAgentAssistantBridge = ({
           currentPage={readingContext.pageNumber}
           spoilerProtection={aiSettings.spoilerProtection}
           onIndex={handleSearchIndex}
+          indexedOverride={indexed}
           onResultClick={(cfi) => {
             if (cfi) handleNavigate(cfi);
           }}
