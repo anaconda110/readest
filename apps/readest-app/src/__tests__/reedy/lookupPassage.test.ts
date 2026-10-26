@@ -17,14 +17,19 @@ const model: EmbeddingModel = {
   },
 };
 
-function passage(id: string, text: string, position = 0): RetrieverResult['passages'][number] {
+function passage(
+  id: string,
+  text: string,
+  position = 0,
+  sectionIndex = 0,
+): RetrieverResult['passages'][number] {
   return {
     id,
     bookHash: 'bk1',
     cfi: `epubcfi(/6/2!/4/${position * 2 + 2})`,
     endCfi: `epubcfi(/6/2!/4/${position * 2 + 4})`,
-    sectionIndex: 0,
-    chapterTitle: 'Ch1',
+    sectionIndex,
+    chapterTitle: `Ch${sectionIndex + 1}`,
     text,
     positionIndex: position,
     score: 0.5,
@@ -64,6 +69,15 @@ describe('buildLookupTool', () => {
 
     it('rejects topK > 5', () => {
       expect(lookupInputSchema.safeParse({ query: 'q', topK: 6 }).success).toBe(false);
+    });
+
+    it('accepts an optional non-negative sectionIndex', () => {
+      expect(lookupInputSchema.safeParse({ query: 'q', topK: 3, sectionIndex: 2 }).success).toBe(
+        true,
+      );
+      expect(lookupInputSchema.safeParse({ query: 'q', topK: 3, sectionIndex: -1 }).success).toBe(
+        false,
+      );
     });
   });
 
@@ -127,6 +141,67 @@ describe('buildLookupTool', () => {
       await runExecute(toolA, { query: 'foo', topK: 3 });
       await runExecute(toolB, { query: 'foo', topK: 3 });
       expect(calls).toBe(2);
+    });
+
+    it('does NOT dedupe when the fixed sectionIndex differs', async () => {
+      let calls = 0;
+      const retriever = fakeRetriever(async () => {
+        calls++;
+        return { passages: [passage('p1', 'hello')], status: 'ok' };
+      });
+      const toolA = buildLookupTool({
+        bookHash: 'bk1',
+        retriever,
+        activeEmbeddingModel: model,
+        turnState,
+        sectionIndex: 1,
+      });
+      const toolB = buildLookupTool({
+        bookHash: 'bk1',
+        retriever,
+        activeEmbeddingModel: model,
+        turnState,
+        sectionIndex: 2,
+      });
+      await runExecute(toolA, { query: 'foo', topK: 3 });
+      await runExecute(toolB, { query: 'foo', topK: 3 });
+      expect(calls).toBe(2);
+    });
+  });
+
+  describe('section scope', () => {
+    it('forwards the fixed sectionIndex to the retriever and returns it in passages', async () => {
+      const retriever = fakeRetriever(async () => ({
+        passages: [passage('p1', 'chapter text', 1, 1)],
+        status: 'ok',
+      }));
+      const tool = buildLookupTool({
+        bookHash: 'bk1',
+        retriever,
+        activeEmbeddingModel: model,
+        turnState,
+        sectionIndex: 1,
+      });
+
+      const res = await runExecute(tool, { query: 'q', topK: 3 });
+
+      expect(retriever.search).toHaveBeenCalledWith(expect.objectContaining({ sectionIndex: 1 }));
+      expect(res.passages[0]!.sectionIndex).toBe(1);
+    });
+
+    it('lets a fixed scope override a conflicting model-provided sectionIndex', async () => {
+      const retriever = fakeRetriever(async () => ({ passages: [], status: 'ok' }));
+      const tool = buildLookupTool({
+        bookHash: 'bk1',
+        retriever,
+        activeEmbeddingModel: model,
+        turnState,
+        sectionIndex: 4,
+      });
+
+      await runExecute(tool, { query: 'q', topK: 3, sectionIndex: 2 });
+
+      expect(retriever.search).toHaveBeenCalledWith(expect.objectContaining({ sectionIndex: 4 }));
     });
   });
 

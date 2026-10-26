@@ -105,13 +105,14 @@ describe('lookupPassage (Phase 2.4 wrapper) tool', () => {
       createLookupPassageTool({ bookHash: 'bk1', retriever, activeEmbeddingModel: model }),
     );
     const out = (await reg.invoke('lookupPassage', { query: 'hello', topK: 3 }, ctxFor())) as {
-      passages: Array<{ cfi: string; chapter: string | null }>;
+      passages: Array<{ cfi: string; chapter: string | null; sectionIndex: number }>;
       status: string;
     };
     expect(out.status).toBe('ok');
     expect(out.passages).toHaveLength(1);
     expect(out.passages[0]!.cfi).toBe('epubcfi(/6/2!/4/2)');
     expect(out.passages[0]!.chapter).toBe('Ch1');
+    expect(out.passages[0]!.sectionIndex).toBe(0);
   });
 
   it('forwards spoilerBoundPosition through to BookRetriever.search', async () => {
@@ -124,6 +125,30 @@ describe('lookupPassage (Phase 2.4 wrapper) tool', () => {
     expect(retriever.search).toHaveBeenCalledWith(
       expect.objectContaining({ spoilerBoundPosition: 7 }),
     );
+  });
+
+  it('forwards a model-provided sectionIndex through to BookRetriever.search', async () => {
+    const retriever = fakeRetriever({ passages: [], status: 'ok' });
+    const reg = new ToolRegistry();
+    reg.register(
+      createLookupPassageTool({ bookHash: 'bk1', retriever, activeEmbeddingModel: model }),
+    );
+    await reg.invoke('lookupPassage', { query: 'q', topK: 3, sectionIndex: 2 }, ctxFor());
+    expect(retriever.search).toHaveBeenCalledWith(expect.objectContaining({ sectionIndex: 2 }));
+  });
+
+  it('uses the turn-level section scope to override the model argument', async () => {
+    const retriever = fakeRetriever({ passages: [], status: 'ok' });
+    const reg = new ToolRegistry();
+    reg.register(
+      createLookupPassageTool({ bookHash: 'bk1', retriever, activeEmbeddingModel: model }),
+    );
+    await reg.invoke(
+      'lookupPassage',
+      { query: 'q', topK: 3, sectionIndex: 1 },
+      ctxFor({ sectionIndex: 3 }),
+    );
+    expect(retriever.search).toHaveBeenCalledWith(expect.objectContaining({ sectionIndex: 3 }));
   });
 });
 

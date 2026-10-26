@@ -37,6 +37,7 @@ export interface RetrieveArgs {
   bookHash: string;
   query: string;
   k: number;
+  sectionIndex?: number;
   spoilerBoundPosition?: number;
   activeEmbeddingModel: EmbeddingModel;
   /** Query embedding wall-clock budget. @default 5000 */
@@ -101,6 +102,7 @@ export class BookRetriever {
       // contribute nothing useful to the RRF; FTS still ranks meaningfully.
       queryEmbedding: embedding ?? new Array(args.activeEmbeddingModel.dim).fill(0),
       k: args.k,
+      sectionIndex: args.sectionIndex,
       spoilerBoundPosition: args.spoilerBoundPosition,
     });
 

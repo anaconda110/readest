@@ -485,11 +485,14 @@ export class ReedyDb {
     queryText: string;
     queryEmbedding: number[];
     k: number;
+    sectionIndex?: number;
     spoilerBoundPosition?: number;
   }): Promise<ScoredChunk[]> {
-    const { bookHash, queryText, queryEmbedding, k, spoilerBoundPosition } = args;
+    const { bookHash, queryText, queryEmbedding, k, sectionIndex, spoilerBoundPosition } = args;
     if (k <= 0) return [];
 
+    const sectionClause = sectionIndex !== undefined ? ' AND c.section_index = ?' : '';
+    const sectionParam: unknown[] = sectionIndex !== undefined ? [sectionIndex] : [];
     const spoilerClause = spoilerBoundPosition !== undefined ? ' AND c.position_index <= ?' : '';
     const spoilerParam: unknown[] =
       spoilerBoundPosition !== undefined ? [spoilerBoundPosition] : [];
@@ -507,10 +510,10 @@ export class ReedyDb {
               vector_distance_cos(e.embedding, vector32(?)) AS metric
          FROM reedy_book_chunk_embeddings e
          JOIN reedy_book_chunks c ON c.id = e.chunk_id
-        WHERE e.book_hash = ?${spoilerClause}
+        WHERE e.book_hash = ?${sectionClause}${spoilerClause}
         ORDER BY metric ASC
         LIMIT ?`,
-      [serializeVector(queryEmbedding), bookHash, ...spoilerParam, fetchK],
+      [serializeVector(queryEmbedding), bookHash, ...sectionParam, ...spoilerParam, fetchK],
     );
 
     // FTS path — Tantivy BM25 over the chunks.text column.
@@ -522,10 +525,10 @@ export class ReedyDb {
                   c.start_cfi, c.end_cfi, c.position_index, c.text, c.token_count,
                   fts_score(c.text, ?) AS metric
              FROM reedy_book_chunks c
-            WHERE fts_match(c.text, ?) AND c.book_hash = ?${spoilerClause}
+            WHERE fts_match(c.text, ?) AND c.book_hash = ?${sectionClause}${spoilerClause}
             ORDER BY metric DESC
             LIMIT ?`,
-          [queryText, queryText, bookHash, ...spoilerParam, fetchK],
+          [queryText, queryText, bookHash, ...sectionParam, ...spoilerParam, fetchK],
         );
       } catch {
         // FTS index may legitimately be empty (no chunks yet) or the query

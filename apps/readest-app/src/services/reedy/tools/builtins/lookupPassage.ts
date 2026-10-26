@@ -19,6 +19,7 @@ import type { EmbeddingModel } from '@/services/reedy/models/EmbeddingModel';
 const inputSchema = z.object({
   query: z.string().min(1).max(500),
   topK: z.number().int().min(1).max(5).default(5),
+  sectionIndex: z.number().int().nonnegative().optional(),
   spoilerBoundPosition: z.number().int().nonnegative().optional(),
 });
 
@@ -33,6 +34,7 @@ export interface LookupPassageResult {
     cfi: string;
     endCfi: string;
     chapter: string | null;
+    sectionIndex: number;
     text: string;
     score: number;
   }>;
@@ -50,12 +52,14 @@ export function createLookupPassageTool(
     permission: 'read',
     parallelSafe: true,
     inputSchema,
-    async run(args) {
+    async run(args, ctx) {
       const parsed = inputSchema.parse(args);
+      const sectionIndex = ctx.sectionIndex ?? parsed.sectionIndex;
       const res = await deps.retriever.search({
         bookHash: deps.bookHash,
         query: parsed.query,
         k: parsed.topK,
+        sectionIndex,
         spoilerBoundPosition: parsed.spoilerBoundPosition,
         activeEmbeddingModel: deps.activeEmbeddingModel,
       });
@@ -64,6 +68,7 @@ export function createLookupPassageTool(
           cfi: p.cfi,
           endCfi: p.endCfi,
           chapter: p.chapterTitle,
+          sectionIndex: p.sectionIndex,
           text: p.text,
           score: p.score,
         })),

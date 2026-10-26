@@ -8,12 +8,18 @@ import type { ChunkRow, EmbeddingRow } from '@/services/reedy/db/types';
 
 const DIM = 4;
 
-function chunk(id: string, bookHash: string, pos: number, text: string): ChunkRow {
+function chunk(
+  id: string,
+  bookHash: string,
+  pos: number,
+  text: string,
+  sectionIndex = 0,
+): ChunkRow {
   return {
     id,
     bookHash,
-    sectionIndex: 0,
-    chapterTitle: 'Ch1',
+    sectionIndex,
+    chapterTitle: `Ch${sectionIndex + 1}`,
     startCfi: `/6/4!/4/${pos * 2 + 2},/1:0,/1:10`,
     endCfi: `/6/4!/4/${pos * 2 + 2},/1:10,/1:20`,
     positionIndex: pos,
@@ -242,10 +248,10 @@ describe('ReedyDb', () => {
       // bookB: 1 chunk with an embedding very close to bookA's first to test
       // that book filtering works.
       const chunks = [
-        chunk('a1', 'bookA', 0, 'apple banana cherry'),
-        chunk('a2', 'bookA', 1, 'date elderberry fig'),
-        chunk('a3', 'bookA', 2, 'grape honeydew imbe'),
-        chunk('a4', 'bookA', 3, 'jackfruit kiwi lemon'),
+        chunk('a1', 'bookA', 0, 'apple banana cherry', 0),
+        chunk('a2', 'bookA', 1, 'date elderberry fig', 0),
+        chunk('a3', 'bookA', 2, 'grape honeydew imbe', 1),
+        chunk('a4', 'bookA', 3, 'jackfruit kiwi lemon', 2),
         chunk('b1', 'bookB', 0, 'apple banana cherry'),
       ];
       const embs: EmbeddingRow[] = [
@@ -300,6 +306,30 @@ describe('ReedyDb', () => {
         spoilerBoundPosition: 1,
       });
       for (const r of res) expect(r.positionIndex).toBeLessThanOrEqual(1);
+    });
+
+    it('filters by section_index in both vector and FTS paths', async () => {
+      const res = await reedy.hybridSearch({
+        bookHash: 'bookA',
+        queryText: 'grape jackfruit apple',
+        queryEmbedding: unitVec([0, 0, 0, 1]),
+        k: 5,
+        sectionIndex: 1,
+      });
+      expect(res.length).toBeGreaterThan(0);
+      for (const r of res) expect(r.sectionIndex).toBe(1);
+    });
+
+    it('combines section_index and spoiler filters', async () => {
+      const res = await reedy.hybridSearch({
+        bookHash: 'bookA',
+        queryText: 'grape jackfruit apple',
+        queryEmbedding: unitVec([0, 0, 0, 1]),
+        k: 5,
+        sectionIndex: 2,
+        spoilerBoundPosition: 1,
+      });
+      expect(res).toEqual([]);
     });
   });
 });

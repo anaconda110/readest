@@ -902,6 +902,8 @@
   "Loading Reedy...": "正在加载 Reedy...",
   "Ask anything about this book.": "询问关于这本书的任何问题。",
   "Current chapter": "当前章节",
+  "Analyze only the current chapter \"{{title}}\". Retrieval is scoped to this chapter. When retrieval tools are available, run several focused searches inside the chapter before answering; otherwise use the retrieved chapter passages already supplied. Cover key events, characters, themes, and open questions. Base every claim on retrieved passages, cite them, and state clearly when the passages are insufficient.": "只分析当前章节“{{title}}”。检索范围限定在本章。检索工具可用时，回答前请在本章内进行多次有针对性的检索；否则请使用已经提供的本章检索片段。请覆盖关键事件、人物、主题和未解决的问题。所有结论都必须基于检索到的段落并注明出处；如果段落不足，请明确说明。",
+  "Analyze the whole book. When retrieval tools are available, run multiple focused searches across the book before answering; otherwise use the retrieved passages already supplied. Cover major themes, characters, structure, and unresolved questions. Base every claim on retrieved passages, cite them, and state clearly when the passages are insufficient. Do not claim to have read every page.": "分析整本书。检索工具可用时，回答前请在全书范围内进行多次有针对性的检索；否则请使用已经提供的检索片段。请覆盖主要主题、人物、结构和未解决的问题。所有结论都必须基于检索到的段落并注明出处；如果段落不足，请明确说明。不要声称已经读完整本书。",
   "Expand AI panel": "展开 AI 分析面板",
   "Collapse AI panel": "收起 AI 分析面板",
   "Provider": "提供商",

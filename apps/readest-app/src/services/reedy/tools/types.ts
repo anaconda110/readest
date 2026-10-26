@@ -15,6 +15,8 @@ export interface ToolContext {
   sessionId: string;
   /** The assistant message currently being produced. */
   assistantMessageId: string;
+  /** Optional fixed chapter scope for this turn (e.g. Chapter Analysis). */
+  sectionIndex?: number;
   /** Abort signal for the whole turn; tools must wire it through. */
   signal: AbortSignal;
   /**

@@ -901,6 +901,8 @@
   "Loading Reedy...": "正在載入 Reedy...",
   "Ask anything about this book.": "詢問關於這本書的任何問題。",
   "Current chapter": "當前章節",
+  "Analyze only the current chapter \"{{title}}\". Retrieval is scoped to this chapter. When retrieval tools are available, run several focused searches inside the chapter before answering; otherwise use the retrieved chapter passages already supplied. Cover key events, characters, themes, and open questions. Base every claim on retrieved passages, cite them, and state clearly when the passages are insufficient.": "只分析當前章節「{{title}}」。檢索範圍限定在本章。檢索工具可用時，回答前請在本章內進行多次有針對性的檢索；否則請使用已經提供的本章檢索片段。請涵蓋關鍵事件、人物、主題和未解決的問題。所有結論都必須基於檢索到的段落並註明出處；如果段落不足，請明確說明。",
+  "Analyze the whole book. When retrieval tools are available, run multiple focused searches across the book before answering; otherwise use the retrieved passages already supplied. Cover major themes, characters, structure, and unresolved questions. Base every claim on retrieved passages, cite them, and state clearly when the passages are insufficient. Do not claim to have read every page.": "分析整本書。檢索工具可用時，回答前請在全書範圍內進行多次有針對性的檢索；否則請使用已經提供的檢索片段。請涵蓋主要主題、人物、結構和未解決的問題。所有結論都必須基於檢索到的段落並註明出處；如果段落不足，請明確說明。不要聲稱已經讀完整本書。",
   "Expand AI panel": "展開 AI 分析面板",
   "Collapse AI panel": "收起 AI 分析面板",
   "Provider": "提供者",

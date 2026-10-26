@@ -135,6 +135,34 @@ describe('TauriChatAdapter wiring (M1.11)', () => {
     );
   });
 
+  it('passes the one-shot chapter scope consumed at turn start to lookupPassage', async () => {
+    const sourceStore = new ReedySourceStore();
+    const backend = fakeReedy();
+    const consumeSectionIndex = vi.fn(() => 3);
+    const adapter = createTauriAdapter(() => ({
+      settings: baseSettings,
+      bookHash: 'bk1',
+      bookTitle: 'Title',
+      authorName: 'Author',
+      currentPage: 0,
+      backend,
+      sourceStore,
+      consumeSectionIndex,
+    }));
+
+    await drainRun(
+      adapter.run({
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'Analyze this chapter' }] }],
+        abortSignal: undefined,
+      } as unknown as Parameters<typeof adapter.run>[0]) as AsyncIterable<unknown>,
+    );
+
+    expect(consumeSectionIndex).toHaveBeenCalledTimes(1);
+    expect(backend.buildLookupTool).toHaveBeenCalledWith(
+      expect.objectContaining({ sectionIndex: 3 }),
+    );
+  });
+
   it('legacy backend: streamText receives NO tools and the system prompt holds chunks', async () => {
     const sourceStore = new ReedySourceStore();
     const chunks: ScoredChunk[] = [
@@ -175,6 +203,36 @@ describe('TauriChatAdapter wiring (M1.11)', () => {
     const turnIds = (sourceStore as unknown as { sources: Map<string, unknown[]> }).sources;
     const populatedTurns = [...turnIds.entries()].filter(([, v]) => v.length > 0);
     expect(populatedTurns.length).toBe(1);
+  });
+
+  it('legacy backend: forwards the one-shot chapter scope to system-prompt retrieval', async () => {
+    const sourceStore = new ReedySourceStore();
+    const backend = fakeLegacy();
+    const consumeSectionIndex = vi.fn(() => 2);
+    const adapter = createTauriAdapter(() => ({
+      settings: { ...baseSettings, reedy: { enabled: false }, provider: 'ollama' },
+      bookHash: 'bk1',
+      bookTitle: 'Title',
+      authorName: 'Author',
+      currentPage: 9,
+      backend,
+      sourceStore,
+      consumeSectionIndex,
+    }));
+
+    await drainRun(
+      adapter.run({
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'Analyze this chapter' }] }],
+        abortSignal: undefined,
+      } as unknown as Parameters<typeof adapter.run>[0]) as AsyncIterable<unknown>,
+    );
+
+    expect(consumeSectionIndex).toHaveBeenCalledTimes(1);
+    expect(backend.searchForSystemPrompt).toHaveBeenCalledWith(
+      'Analyze this chapter',
+      'bk1',
+      expect.objectContaining({ sectionIndex: 2 }),
+    );
   });
 
   it('onTurnStart fires synchronously before the stream begins so the UI can subscribe', async () => {

@@ -14,6 +14,7 @@ export interface LookupPassage {
   cfi: string;
   endCfi: string;
   chapter?: string;
+  sectionIndex: number;
   text: string;
 }
 
@@ -57,6 +58,7 @@ const RESULT_SIZE_CAP_CHARS = 6_000;
 export const lookupInputSchema = z.object({
   query: z.string().min(1).max(MAX_QUERY_CHARS),
   topK: z.number().int().min(1).max(MAX_TOP_K).default(MAX_TOP_K),
+  sectionIndex: z.number().int().nonnegative().optional(),
 });
 
 export interface BuildLookupToolArgs {
@@ -66,6 +68,8 @@ export interface BuildLookupToolArgs {
   turnState: LookupTurnState;
   /** Optional position cap for spoiler-free retrieval. */
   spoilerBoundPosition?: number;
+  /** Fixed chapter scope for this turn; overrides any model-provided section. */
+  sectionIndex?: number;
   /**
    * Optional sink for telemetry — wired by M1.9 to record `tool_called`,
    * `tool_returned_empty`, etc. Kept as a callback so the tool factory has
@@ -94,8 +98,15 @@ export interface BuildLookupToolArgs {
  * prompt builder wraps each passage at the system-message boundary.
  */
 export function buildLookupTool(args: BuildLookupToolArgs) {
-  const { bookHash, retriever, activeEmbeddingModel, turnState, spoilerBoundPosition, onEvent } =
-    args;
+  const {
+    bookHash,
+    retriever,
+    activeEmbeddingModel,
+    turnState,
+    spoilerBoundPosition,
+    sectionIndex: fixedSectionIndex,
+    onEvent,
+  } = args;
 
   return tool({
     description:
@@ -104,11 +115,12 @@ export function buildLookupTool(args: BuildLookupToolArgs) {
       'Call this whenever the user asks about the book content. ' +
       "If status != 'ok', use the hint to phrase the user-visible reply.",
     inputSchema: lookupInputSchema,
-    async execute({ query, topK }) {
+    async execute({ query, topK, sectionIndex }) {
+      const effectiveSectionIndex = fixedSectionIndex ?? sectionIndex;
       // Chain on the prior call so concurrent dispatches serialize.
       const chained = turnState.pendingChain.then(
-        () => doExecute({ query, topK }),
-        () => doExecute({ query, topK }),
+        () => doExecute({ query, topK, sectionIndex: effectiveSectionIndex }),
+        () => doExecute({ query, topK, sectionIndex: effectiveSectionIndex }),
       );
       turnState.pendingChain = chained.then(
         () => undefined,
@@ -121,14 +133,17 @@ export function buildLookupTool(args: BuildLookupToolArgs) {
   async function doExecute({
     query,
     topK,
+    sectionIndex,
   }: {
     query: string;
     topK: number;
+    sectionIndex?: number;
   }): Promise<LookupToolResult> {
     const cacheKey = JSON.stringify({
       q: query.trim().toLowerCase(),
       k: topK,
       sb: spoilerBoundPosition ?? null,
+      si: sectionIndex ?? null,
       m: activeEmbeddingModel.id,
       b: bookHash,
     });
@@ -158,6 +173,7 @@ export function buildLookupTool(args: BuildLookupToolArgs) {
       bookHash,
       query,
       k: topK,
+      sectionIndex,
       spoilerBoundPosition,
       activeEmbeddingModel,
     });
@@ -167,6 +183,7 @@ export function buildLookupTool(args: BuildLookupToolArgs) {
       cfi: p.cfi,
       endCfi: p.endCfi,
       chapter: p.chapterTitle ?? undefined,
+      sectionIndex: p.sectionIndex,
       text: p.text,
     }));
 

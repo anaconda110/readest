@@ -21,6 +21,8 @@ export function useReedyTurn(runtime: AgentRuntime | null) {
       sessionId: string;
       bookHash: string;
       userMessage: string;
+      /** Optional fixed chapter scope enforced for this turn's retrieval. */
+      sectionIndex?: number;
       /** Optional per-turn tool-name allowlist (e.g. active skill's). */
       toolAllowlist?: readonly string[] | null;
     }): Promise<void> => {
@@ -38,6 +40,7 @@ export function useReedyTurn(runtime: AgentRuntime | null) {
         sessionId: args.sessionId,
         bookHash: args.bookHash,
         userMessage: args.userMessage,
+        sectionIndex: args.sectionIndex,
         signal: controller.signal,
         toolAllowlist: args.toolAllowlist ?? null,
       };

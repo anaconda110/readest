@@ -224,12 +224,14 @@ class AIStore {
     queryEmbedding: number[],
     topK: number,
     maxPage?: number,
+    sectionIndex?: number,
   ): Promise<ScoredChunk[]> {
     const chunks = await this.getChunks(bookHash);
     const beforeFilter = chunks.filter((c) => c.embedding).length;
     const scored: ScoredChunk[] = [];
     for (const chunk of chunks) {
       if (maxPage !== undefined && chunk.pageNumber > maxPage) continue;
+      if (sectionIndex !== undefined && chunk.sectionIndex !== sectionIndex) continue;
       if (!chunk.embedding) continue;
       scored.push({
         ...chunk,
@@ -250,6 +252,7 @@ class AIStore {
     query: string,
     topK: number,
     maxPage?: number,
+    sectionIndex?: number,
   ): Promise<ScoredChunk[]> {
     const index = await this.loadBM25Index(bookHash);
     if (!index) return [];
@@ -262,6 +265,7 @@ class AIStore {
         const chunk = chunkMap.get(result.ref);
         if (!chunk) continue;
         if (maxPage !== undefined && chunk.pageNumber > maxPage) continue;
+        if (sectionIndex !== undefined && chunk.sectionIndex !== sectionIndex) continue;
         scored.push({ ...chunk, score: result.score, searchMethod: 'bm25' });
         if (scored.length >= topK) break;
       }
@@ -278,10 +282,13 @@ class AIStore {
     query: string,
     topK: number,
     maxPage?: number,
+    sectionIndex?: number,
   ): Promise<ScoredChunk[]> {
     const [vectorResults, bm25Results] = await Promise.all([
-      queryEmbedding ? this.vectorSearch(bookHash, queryEmbedding, topK * 2, maxPage) : [],
-      this.bm25Search(bookHash, query, topK * 2, maxPage),
+      queryEmbedding
+        ? this.vectorSearch(bookHash, queryEmbedding, topK * 2, maxPage, sectionIndex)
+        : [],
+      this.bm25Search(bookHash, query, topK * 2, maxPage, sectionIndex),
     ]);
     const normalize = (results: ScoredChunk[], weight: number) => {
       if (results.length === 0) return [];

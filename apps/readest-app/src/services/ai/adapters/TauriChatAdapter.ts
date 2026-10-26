@@ -22,6 +22,8 @@ export interface TauriAdapterOptions {
   backend: RetrievalBackend;
   /** Per-adapter-instance source store; the same one the UI subscribes to. */
   sourceStore: ReedySourceStore;
+  /** Consume a one-shot chapter scope queued by a Chapter Analysis action. */
+  consumeSectionIndex?: () => number | undefined;
   /** Called when a new turn starts so the UI can switch its subscription. */
   onTurnStart?: (turnId: string) => void;
 }
@@ -73,6 +75,7 @@ export function createTauriAdapter(getOptions: () => TauriAdapterOptions): ChatM
         sourceStore,
         onTurnStart,
       } = options;
+      const sectionIndex = options.consumeSectionIndex?.();
 
       // A fresh per-turn id so the source store can key this turn's
       // citations independently of any prior turn. We expose it via
@@ -117,6 +120,7 @@ export function createTauriAdapter(getOptions: () => TauriAdapterOptions): ChatM
             bookHash,
             turnId,
             sourceStore,
+            sectionIndex,
             spoilerBoundPosition: settings.spoilerProtection ? currentPage : undefined,
           });
           const systemPrompt = buildReedySystemPrompt(bookTitle, authorName, currentPage);
@@ -142,6 +146,7 @@ export function createTauriAdapter(getOptions: () => TauriAdapterOptions): ChatM
                 (await backend.searchForSystemPrompt?.(query, bookHash, {
                   topK: settings.maxContextChunks || 5,
                   spoilerBoundPosition: settings.spoilerProtection ? currentPage : undefined,
+                  sectionIndex,
                 })) ?? [];
               aiLogger.chat.context(chunks.length, chunks.map((c) => c.text).join('').length);
               sourceStore.replace(turnId, chunksToRetrieved(chunks));

@@ -24,6 +24,13 @@ export interface SearchBookResponse {
   reason?: string;
 }
 
+export interface SearchOptions {
+  topK: number;
+  spoilerBoundPosition?: number;
+  /** Exact chapter (spine section) scope for one-shot chapter analysis. */
+  sectionIndex?: number;
+}
+
 export interface BackendIndexOptions {
   onProgress?: (progress: EmbeddingProgress) => void;
   signal?: AbortSignal;
@@ -51,11 +58,7 @@ export interface RetrievalBackend {
   clearBook(bookHash: string): Promise<void>;
 
   /** User-facing semantic/keyword search used by the AI analysis panel. */
-  searchBook(
-    query: string,
-    bookHash: string,
-    options: { topK: number; spoilerBoundPosition?: number },
-  ): Promise<SearchBookResponse>;
+  searchBook(query: string, bookHash: string, options: SearchOptions): Promise<SearchBookResponse>;
 
   /**
    * Legacy IDB path only. Returns top-K chunks the adapter folds into the
@@ -64,7 +67,7 @@ export interface RetrievalBackend {
   searchForSystemPrompt?(
     query: string,
     bookHash: string,
-    options: { topK: number; spoilerBoundPosition?: number },
+    options: SearchOptions,
   ): Promise<ScoredChunk[]>;
 
   /**
@@ -76,6 +79,7 @@ export interface RetrievalBackend {
     bookHash: string;
     turnId: string;
     sourceStore: ReedySourceStore;
+    sectionIndex?: number;
     spoilerBoundPosition?: number;
   }): Tool;
 }

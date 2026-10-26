@@ -31,6 +31,8 @@ export interface RunTurnInput {
   assistantMessageId?: string;
   /** Caller signal — runtime composes with its own so tools see both. */
   signal?: AbortSignal;
+  /** Optional fixed chapter scope enforced for every retrieval tool call. */
+  sectionIndex?: number;
   /**
    * Optional per-turn tool-name allowlist. When provided, only tools
    * whose name appears here are exposed to the model. Used by the
@@ -124,6 +126,7 @@ export class AgentRuntime {
       bookHash: input.bookHash,
       sessionId: input.sessionId,
       assistantMessageId,
+      sectionIndex: input.sectionIndex,
       signal: input.signal ?? new AbortController().signal,
       // ToolRegistry only invokes requestPermission for non-read tools, so
       // the default here is reached only when the caller didn't supply a

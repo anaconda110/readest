@@ -156,9 +156,10 @@ export class ReedyBackend implements RetrievalBackend {
     bookHash: string;
     turnId: string;
     sourceStore: ReedySourceStore;
+    sectionIndex?: number;
     spoilerBoundPosition?: number;
   }): Tool {
-    const { bookHash, turnId, sourceStore, spoilerBoundPosition } = args;
+    const { bookHash, turnId, sourceStore, sectionIndex, spoilerBoundPosition } = args;
     // Wrap the retriever so each lookupPassage call also appends its result
     // to the sourceStore — the Sources dropdown reads from the same store.
     const lazyRetriever: BookRetriever = {
@@ -177,6 +178,7 @@ export class ReedyBackend implements RetrievalBackend {
       retriever: lazyRetriever,
       activeEmbeddingModel: this.model,
       turnState: createTurnState(),
+      sectionIndex,
       spoilerBoundPosition,
       onEvent: (event) => {
         // Map the tool's lifecycle events into the metrics schema. The

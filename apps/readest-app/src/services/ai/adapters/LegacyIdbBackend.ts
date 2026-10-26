@@ -2,7 +2,12 @@ import type { BookDoc } from '@/libs/document';
 import { hybridSearch, indexBook as ragIndexBook, isBookIndexed } from '../ragService';
 import { aiStore } from '../storage/aiStore';
 import type { AISettings, ScoredChunk } from '../types';
-import type { BackendIndexOptions, RetrievalBackend, SearchBookResponse } from './retrievalBackend';
+import type {
+  BackendIndexOptions,
+  RetrievalBackend,
+  SearchBookResponse,
+  SearchOptions,
+} from './retrievalBackend';
 
 /**
  * Thin RetrievalBackend façade around the legacy IndexedDB ragService so
@@ -40,7 +45,7 @@ export class LegacyIdbBackend implements RetrievalBackend {
   async searchBook(
     query: string,
     bookHash: string,
-    options: { topK: number; spoilerBoundPosition?: number },
+    options: SearchOptions,
   ): Promise<SearchBookResponse> {
     const chunks = await hybridSearch(
       bookHash,
@@ -48,6 +53,7 @@ export class LegacyIdbBackend implements RetrievalBackend {
       this.settings,
       options.topK,
       options.spoilerBoundPosition,
+      options.sectionIndex,
     );
     return {
       status: 'ok',
@@ -65,8 +71,15 @@ export class LegacyIdbBackend implements RetrievalBackend {
   searchForSystemPrompt(
     query: string,
     bookHash: string,
-    options: { topK: number; spoilerBoundPosition?: number },
+    options: SearchOptions,
   ): Promise<ScoredChunk[]> {
-    return hybridSearch(bookHash, query, this.settings, options.topK, options.spoilerBoundPosition);
+    return hybridSearch(
+      bookHash,
+      query,
+      this.settings,
+      options.topK,
+      options.spoilerBoundPosition,
+      options.sectionIndex,
+    );
   }
 }

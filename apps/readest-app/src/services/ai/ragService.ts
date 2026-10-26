@@ -181,6 +181,7 @@ export async function hybridSearch(
   settings: AISettings,
   topK = 10,
   maxPage?: number,
+  sectionIndex?: number,
 ): Promise<ScoredChunk[]> {
   aiLogger.search.query(query, maxPage);
   const provider = getAIProvider(settings);
@@ -202,7 +203,14 @@ export async function hybridSearch(
     // bm25 only fallback
   }
 
-  const results = await aiStore.hybridSearch(bookHash, queryEmbedding, query, topK, maxPage);
+  const results = await aiStore.hybridSearch(
+    bookHash,
+    queryEmbedding,
+    query,
+    topK,
+    maxPage,
+    sectionIndex,
+  );
   aiLogger.search.hybridResults(results.length, [...new Set(results.map((r) => r.searchMethod))]);
   return results;
 }

@@ -61,7 +61,7 @@ export interface ReedyAssistantProps {
   /** Wired by the notebook to `getView(bookKey)?.goTo(cfi)` on click. */
   onNavigateToCfi?: (cfi: string) => void;
   /** Prompt queued by the shared AI analysis tabs after indexing completes. */
-  promptRequest?: { id: number; text: string } | null;
+  promptRequest?: { id: number; text: string; sectionIndex?: number } | null;
   onPromptRequestHandled?: (id: number) => void;
   /** Lets the outer five-tab shell enable analysis actions only when ready. */
   onIndexingPhaseChange?: (indexed: boolean) => void;
@@ -346,12 +346,13 @@ export function ReedyAssistant({
   }, [handleIndex, onIndexActionChange]);
 
   const handleSend = useCallback(
-    (text: string) => {
+    (text: string, sectionIndex?: number) => {
       if (!runtime) return;
       void send({
         sessionId: bookHash,
         bookHash,
         userMessage: text,
+        sectionIndex,
         toolAllowlist: activeSkill?.toolAllowlist ?? null,
       });
     },
@@ -369,7 +370,7 @@ export function ReedyAssistant({
       return;
     }
     handledPromptIdRef.current = promptRequest.id;
-    handleSend(promptRequest.text);
+    handleSend(promptRequest.text, promptRequest.sectionIndex);
     onPromptRequestHandled?.(promptRequest.id);
   }, [handleSend, indexingPhase, onPromptRequestHandled, promptRequest, runtime]);
 

@@ -25,12 +25,18 @@ function fakeModel(
   };
 }
 
-function chunk(id: string, bookHash: string, pos: number, text: string): ChunkRow {
+function chunk(
+  id: string,
+  bookHash: string,
+  pos: number,
+  text: string,
+  sectionIndex = 0,
+): ChunkRow {
   return {
     id,
     bookHash,
-    sectionIndex: 0,
-    chapterTitle: 'Ch1',
+    sectionIndex,
+    chapterTitle: `Ch${sectionIndex + 1}`,
     startCfi: `epubcfi(/6/2!/4/${pos * 2 + 2},/1:0,/1:10)`,
     endCfi: `epubcfi(/6/2!/4/${pos * 2 + 2},/1:10,/1:20)`,
     positionIndex: pos,
@@ -183,11 +189,11 @@ describe('BookRetriever', () => {
       });
       await reedy.ensureEmbeddingsTable(DIM);
       await reedy.insertChunks([
-        chunk('a0', 'bookA', 0, 'alpha bravo charlie introduction'),
-        chunk('a1', 'bookA', 1, 'delta echo foxtrot middle chapter'),
-        chunk('a2', 'bookA', 2, 'golf hotel india later passages'),
-        chunk('a3', 'bookA', 3, 'juliet kilo lima final wrap-up'),
-        chunk('b1', 'bookB', 0, 'alpha bravo charlie introduction'),
+        chunk('a0', 'bookA', 0, 'alpha bravo charlie introduction', 0),
+        chunk('a1', 'bookA', 1, 'delta echo foxtrot middle chapter', 1),
+        chunk('a2', 'bookA', 2, 'golf hotel india later passages', 1),
+        chunk('a3', 'bookA', 3, 'juliet kilo lima final wrap-up', 2),
+        chunk('b1', 'bookB', 0, 'alpha bravo charlie introduction', 0),
       ]);
       const embs: EmbeddingRow[] = [
         { chunkId: 'a0', bookHash: 'bookA', embedding: unitVec([1, 0, 0, 0]) },
@@ -268,6 +274,21 @@ describe('BookRetriever', () => {
         }),
       });
       for (const p of res.passages) expect(p.positionIndex).toBeLessThanOrEqual(1);
+    });
+
+    it('forwards sectionIndex so only that chapter is retrieved', async () => {
+      const res = await retriever.search({
+        bookHash: 'bookA',
+        query: 'later passages',
+        k: 5,
+        sectionIndex: 1,
+        activeEmbeddingModel: fakeModel({
+          embedFn: async (texts) => texts.map(() => unitVec([0, 0, 1, 0])),
+        }),
+      });
+      expect(res.status).toBe('ok');
+      expect(res.passages.length).toBeGreaterThan(0);
+      for (const p of res.passages) expect(p.sectionIndex).toBe(1);
     });
 
     it('falls back to FTS-only with status=degraded when the embedding call times out', async () => {
