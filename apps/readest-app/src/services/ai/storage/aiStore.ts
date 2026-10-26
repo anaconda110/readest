@@ -491,20 +491,30 @@ class AIStore {
     });
   }
 
-  async saveAnalysisReportsIfAbsent(reports: AIAnalysisReport[]): Promise<AIAnalysisReport[]> {
+  async saveAnalysisReportsIfAbsent(
+    reports: AIAnalysisReport[],
+    options: { replaceFailed?: boolean } = {},
+  ): Promise<AIAnalysisReport[]> {
     if (reports.length === 0) return [];
     const db = await this.openDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(ANALYSIS_REPORTS_STORE, 'readwrite');
       const store = tx.objectStore(ANALYSIS_REPORTS_STORE);
       const inserted: AIAnalysisReport[] = [];
-      const keysRequest = store.getAllKeys();
-      keysRequest.onsuccess = () => {
-        const existingIds = new Set(keysRequest.result.map(String));
+      const existingRequest = store.getAll();
+      existingRequest.onsuccess = () => {
+        const existingReports = new Map(
+          (existingRequest.result as AIAnalysisReport[]).map((report) => [report.id, report]),
+        );
         for (const report of reports) {
-          if (existingIds.has(report.id)) continue;
+          const existing = existingReports.get(report.id);
+          const replaceEmptyFailure =
+            options.replaceFailed === true &&
+            existing?.status === 'error' &&
+            existing.content.trim().length === 0;
+          if (existing && !replaceEmptyFailure) continue;
           store.put(report);
-          existingIds.add(report.id);
+          existingReports.set(report.id, report);
           inserted.push(report);
         }
       };

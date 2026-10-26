@@ -69,6 +69,9 @@ describe('ai-novel-reader-v2 summary import', () => {
 
     expect(inserted).toBe(1023);
     expect(saveAnalysisReportsIfAbsentMock).toHaveBeenCalledTimes(1);
+    expect(saveAnalysisReportsIfAbsentMock).toHaveBeenCalledWith(expect.any(Array), {
+      replaceFailed: true,
+    });
     const reports = saveAnalysisReportsIfAbsentMock.mock.calls[0]![0] as AIAnalysisReport[];
     expect(reports).toHaveLength(1023);
     expect(new Set(reports.map((item) => item.sectionIndex)).size).toBe(1023);
@@ -139,6 +142,35 @@ describe('ai-novel-reader-v2 summary import', () => {
     expect(firstInserted).toBe(1022);
     expect(secondInserted).toBe(0);
     expect(stored.get(existing.id)).toEqual(existing);
+  });
+
+  test('requests replacement of failed empty placeholders', async () => {
+    const id = getAnalysisReportId(dataset.bookHash, 'chapter', 10);
+    const failed = report(id, '', { status: 'error', error: 'Provider unavailable' });
+    const stored = new Map<string, AIAnalysisReport>([[id, failed]]);
+    saveAnalysisReportsIfAbsentMock.mockImplementation(
+      async (reports: AIAnalysisReport[], options?: { replaceFailed?: boolean }) => {
+        const inserted: AIAnalysisReport[] = [];
+        for (const item of reports) {
+          const existing = stored.get(item.id);
+          const canReplace =
+            options?.replaceFailed && existing?.status === 'error' && !existing.content;
+          if (existing && !canReplace) continue;
+          stored.set(item.id, item);
+          inserted.push(item);
+        }
+        return inserted;
+      },
+    );
+
+    await expect(importAiNovelReaderV2Reports(context)).resolves.toBe(1023);
+    expect(stored.get(id)).toEqual(
+      expect.objectContaining({
+        status: 'complete',
+        importedFrom: 'ai-novel-reader-v2',
+        content: expect.stringContaining('张元清清晨旧疾复发'),
+      }),
+    );
   });
 
   test('does not import for a mismatched book identity or TOC', async () => {
