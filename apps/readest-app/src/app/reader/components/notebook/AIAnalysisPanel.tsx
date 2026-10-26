@@ -2,7 +2,15 @@
 
 import clsx from 'clsx';
 import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { BookOpenIcon, BotIcon, Loader2Icon, SearchIcon, SettingsIcon } from 'lucide-react';
+import {
+  AlertTriangleIcon,
+  BookOpenIcon,
+  BotIcon,
+  Loader2Icon,
+  RotateCwIcon,
+  SearchIcon,
+  SettingsIcon,
+} from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -168,6 +176,7 @@ interface AIAnalysisIndexStateProps {
   isLoading: boolean;
   isIndexing: boolean;
   progress: EmbeddingProgress | null;
+  errorMessage?: string | null;
   onIndex: () => void;
 }
 
@@ -175,6 +184,7 @@ export function AIAnalysisIndexState({
   isLoading,
   isIndexing,
   progress,
+  errorMessage,
   onIndex,
 }: AIAnalysisIndexStateProps) {
   const _ = useTranslation();
@@ -236,6 +246,24 @@ export function AIAnalysisIndexState({
     );
   }
 
+  if (errorMessage) {
+    return (
+      <div className='flex h-full flex-col items-center justify-center gap-3 p-4 text-center'>
+        <div className='bg-warning/10 rounded-full p-3'>
+          <AlertTriangleIcon className='text-warning size-6' />
+        </div>
+        <div>
+          <h3 className='text-foreground mb-0.5 text-sm font-medium'>{_('Indexing failed')}</h3>
+          <p className='text-muted-foreground max-h-24 overflow-y-auto text-xs'>{errorMessage}</p>
+        </div>
+        <Button onClick={onIndex} size='sm' variant='outline' className='h-8 text-xs'>
+          <RotateCwIcon className='mr-1.5 size-3.5' />
+          {_('Retry indexing')}
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className='flex h-full flex-col items-center justify-center gap-3 p-4 text-center'>
       <div className='bg-primary/10 rounded-full p-3'>
@@ -290,6 +318,9 @@ interface AIAnalysisSearchProps {
   onResultClick: (cfi?: string, pageNumber?: number) => void;
   onIndex?: () => void | Promise<void>;
   isIndexing?: boolean;
+  indexProgress?: EmbeddingProgress | null;
+  /** Indexing errors are owned by the parent so they survive tab switches. */
+  indexError?: string | null;
   /** Shared parent state so an index completed in another tab enables search immediately. */
   indexedOverride?: boolean | null;
 }
@@ -303,6 +334,8 @@ export function AIAnalysisSearch({
   onResultClick,
   onIndex,
   isIndexing = false,
+  indexProgress = null,
+  indexError,
   indexedOverride,
 }: AIAnalysisSearchProps) {
   const _ = useTranslation();
@@ -445,8 +478,32 @@ export function AIAnalysisSearch({
           <SearchNotice text={_('Search is unavailable. Check your AI settings.')} />
         ) : indexCheckError ? (
           <SearchNotice text={_('Could not check the book index. Try again.')} />
+        ) : indexError ? (
+          <div
+            role='alert'
+            className='flex h-full flex-col items-center justify-center gap-3 px-4 text-center'
+          >
+            <AlertTriangleIcon className='text-warning size-7' />
+            <div>
+              <p className='text-base-content text-sm font-medium'>{_('Indexing failed')}</p>
+              <p className='text-base-content/55 mt-1 max-h-24 overflow-y-auto text-xs'>
+                {indexError}
+              </p>
+            </div>
+            {onIndex && (
+              <Button onClick={() => void handleIndex()} size='sm' className='h-8 text-xs'>
+                <RotateCwIcon className='mr-1.5 size-3.5' />
+                {_('Retry indexing')}
+              </Button>
+            )}
+          </div>
         ) : isIndexingSearch ? (
-          <SearchNotice icon='loading' text={_('Indexing book...')} />
+          <AIAnalysisIndexState
+            isLoading={false}
+            isIndexing
+            progress={indexProgress}
+            onIndex={() => void handleIndex()}
+          />
         ) : error ? (
           <SearchNotice text={error} />
         ) : showIndexPrompt ? (

@@ -122,6 +122,7 @@ const AIAssistantChat = ({
   isIndexed,
   isIndexing,
   indexProgress,
+  indexError,
   onIndex,
 }: {
   aiSettings: AISettings;
@@ -146,6 +147,7 @@ const AIAssistantChat = ({
   isIndexed: boolean;
   isIndexing: boolean;
   indexProgress: EmbeddingProgress | null;
+  indexError: string | null;
   onIndex: () => void;
 }) => {
   const _ = useTranslation();
@@ -250,6 +252,7 @@ const AIAssistantChat = ({
       isIndexed={isIndexed}
       isIndexing={isIndexing}
       indexProgress={indexProgress}
+      indexError={indexError}
       onIndex={onIndex}
     />
   );
@@ -275,6 +278,7 @@ const AIAssistantWithRuntime = ({
   isIndexed,
   isIndexing,
   indexProgress,
+  indexError,
   onIndex,
 }: {
   adapter: NonNullable<ReturnType<typeof createTauriAdapter>>;
@@ -296,6 +300,7 @@ const AIAssistantWithRuntime = ({
   isIndexed: boolean;
   isIndexing: boolean;
   indexProgress: EmbeddingProgress | null;
+  indexError: string | null;
   onIndex: () => void;
 }) => {
   const runtime = useLocalRuntime(adapter, {
@@ -325,6 +330,7 @@ const AIAssistantWithRuntime = ({
               isLoading={isLoading}
               isIndexing={isIndexing}
               progress={indexProgress}
+              errorMessage={indexError}
               onIndex={onIndex}
             />
           )
@@ -455,6 +461,7 @@ const LegacyAIAssistant = ({
   const [isLoading, setIsLoading] = useState(true);
   const [isIndexing, setIsIndexing] = useState(false);
   const [indexProgress, setIndexProgress] = useState<EmbeddingProgress | null>(null);
+  const [indexError, setIndexError] = useState<string | null>(null);
   const [indexed, setIndexed] = useState(false);
   const [currentTurnId, setCurrentTurnId] = useState<string | null>(null);
   const sectionScopeRef = useRef<number | undefined>(undefined);
@@ -483,12 +490,14 @@ const LegacyAIAssistant = ({
   // check if book is indexed on mount
   useEffect(() => {
     if (bookHash && backend) {
+      setIndexError(null);
       void backend
         .isIndexed(bookHash)
         .then((result) => setIndexed(result))
         .catch((error) => {
           aiLogger.rag.indexError(bookHash, (error as Error).message);
           setIndexed(false);
+          setIndexError((error as Error).message);
         })
         .finally(() => setIsLoading(false));
     } else if (!backend) {
@@ -500,12 +509,15 @@ const LegacyAIAssistant = ({
 
   const handleIndex = useCallback(async () => {
     if (!bookData?.bookDoc || !aiSettings || !backend) return;
+    setIndexError(null);
     setIsIndexing(true);
     try {
       await backend.indexBook(bookData.bookDoc, bookHash, { onProgress: setIndexProgress });
       setIndexed(true);
     } catch (e) {
       aiLogger.rag.indexError(bookHash, (e as Error).message);
+      setIndexed(false);
+      setIndexError(e instanceof Error ? e.message : String(e));
     } finally {
       setIsIndexing(false);
       setIndexProgress(null);
@@ -517,6 +529,7 @@ const LegacyAIAssistant = ({
     if (!(await appService.ask(_('Are you sure you want to re-index this book?')))) return;
     await backend.clearBook(bookHash);
     setIndexed(false);
+    setIndexError(null);
   }, [bookHash, appService, backend, _]);
 
   // Navigate the reader to a clicked source's CFI. Legacy backend chunks have
@@ -582,6 +595,8 @@ const LegacyAIAssistant = ({
       onResultClick={handleSearchResultClick}
       onIndex={handleIndex}
       isIndexing={isIndexing}
+      indexProgress={indexProgress}
+      indexError={indexError}
     />
   ) : (
     <AIAnalysisSearch
@@ -613,6 +628,7 @@ const LegacyAIAssistant = ({
             isLoading={isLoading}
             isIndexing={isIndexing}
             progress={indexProgress}
+            errorMessage={indexError}
             onIndex={() => void handleIndex()}
           />
         }
@@ -646,6 +662,7 @@ const LegacyAIAssistant = ({
       isIndexed={indexed}
       isIndexing={isIndexing}
       indexProgress={indexProgress}
+      indexError={indexError}
       onIndex={() => void handleIndex()}
     />
   );

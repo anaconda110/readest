@@ -141,6 +141,24 @@ describe('AIAnalysisIndexState', () => {
     expect(screen.getByText('2 / 10 sections')).toBeTruthy();
     expect(screen.getByText('20%')).toBeTruthy();
   });
+
+  it('shows an indexing error and offers a retry action', () => {
+    const onIndex = vi.fn();
+    render(
+      <AIAnalysisIndexState
+        isLoading={false}
+        isIndexing={false}
+        progress={null}
+        errorMessage='Ollama is not reachable at http://127.0.0.1:11434.'
+        onIndex={onIndex}
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Indexing failed' })).toBeTruthy();
+    expect(screen.getByText('Ollama is not reachable at http://127.0.0.1:11434.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry indexing' }));
+    expect(onIndex).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('AIAnalysisSearch', () => {
@@ -247,6 +265,49 @@ describe('AIAnalysisSearch', () => {
       await screen.findByText('Search failed. Check your AI settings and try again.'),
     ).toBeTruthy();
     expect(screen.queryByText('Index this book to enable semantic search')).toBeNull();
+  });
+
+  it('shows a shared indexing error raised from the Q&A tab', async () => {
+    const backend = fakeBackend({ isIndexed: vi.fn(async () => false) });
+    const onIndex = vi.fn();
+    render(
+      <AIAnalysisSearch
+        backend={backend}
+        bookHash='book-1'
+        currentPage={0}
+        spoilerProtection={false}
+        onResultClick={vi.fn()}
+        onIndex={onIndex}
+        indexError='Ollama is not reachable at http://127.0.0.1:11434.'
+      />,
+    );
+
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(screen.getByText('Indexing failed')).toBeTruthy();
+    expect(screen.getByText('Ollama is not reachable at http://127.0.0.1:11434.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry indexing' }));
+    expect(onIndex).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows live embedding progress while indexing', async () => {
+    const backend = fakeBackend({ isIndexed: vi.fn(async () => false) });
+    render(
+      <AIAnalysisSearch
+        backend={backend}
+        bookHash='book-1'
+        currentPage={0}
+        spoilerProtection={false}
+        onResultClick={vi.fn()}
+        onIndex={vi.fn()}
+        isIndexing
+        indexProgress={{ current: 4, total: 10, phase: 'embedding' }}
+      />,
+    );
+
+    expect(await screen.findByText('Indexing book...')).toBeTruthy();
+    expect(screen.getByText('Generating embeddings...')).toBeTruthy();
+    expect(screen.getByText('4 / 10 chunks')).toBeTruthy();
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('40');
   });
 
   it('searches the book, renders results, and opens the selected passage', async () => {

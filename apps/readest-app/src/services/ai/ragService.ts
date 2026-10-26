@@ -19,6 +19,17 @@ interface TOCItem {
   href?: string;
 }
 
+const OLLAMA_EMBEDDING_BATCH_SIZE = 4;
+const OTHER_PROVIDER_EMBEDDING_BATCH_SIZE = 16;
+
+function getEmbeddingBatchSize(settings: AISettings): number {
+  // Local embedding models are usually memory-bound. Keep the batch small so
+  // a book-sized index does not fail as one oversized Ollama request.
+  return settings.provider === 'ollama'
+    ? OLLAMA_EMBEDDING_BATCH_SIZE
+    : OTHER_PROVIDER_EMBEDDING_BATCH_SIZE;
+}
+
 export interface BookDocType {
   sections?: SectionItem[];
   toc?: TOCItem[];
@@ -71,7 +82,6 @@ export async function indexBook(
   }
 
   aiLogger.rag.indexStart(bookHash, title);
-  const provider = getAIProvider(settings);
   const sections = bookDoc.sections || [];
   const toc = bookDoc.toc || [];
 
@@ -85,7 +95,20 @@ export async function indexBook(
   });
 
   try {
-    onProgress?.({ current: 0, total: 1, phase: 'chunking' });
+    const provider = getAIProvider(settings);
+
+    // Fail fast when the local embedding server is down. Without this probe a
+    // stalled provider can leave the UI sitting at 0% until the batch timeout.
+    if (settings.provider === 'ollama') {
+      const available = await provider.isAvailable();
+      if (!available) {
+        throw new Error(
+          `Ollama is not reachable at ${settings.ollamaBaseUrl || 'http://127.0.0.1:11434'}. Start Ollama and try again.`,
+        );
+      }
+    }
+
+    onProgress?.({ current: 0, total: sections.length, phase: 'chunking' });
     aiLogger.rag.indexProgress('chunking', 0, sections.length);
     const allChunks: TextChunk[] = [];
 
@@ -107,13 +130,14 @@ export async function indexBook(
       } catch (e) {
         aiLogger.chunker.error(i, (e as Error).message);
       }
+      onProgress?.({ current: i + 1, total: sections.length, phase: 'chunking' });
+      aiLogger.rag.indexProgress('chunking', i + 1, sections.length);
     }
 
     aiLogger.chunker.complete(bookHash, allChunks.length);
 
     if (allChunks.length === 0) {
-      aiLogger.rag.indexComplete(bookHash, 0, Date.now() - startTime);
-      return;
+      throw new Error('No extractable text was found in this book.');
     }
 
     onProgress?.({ current: 0, total: allChunks.length, phase: 'embedding' });
@@ -125,27 +149,55 @@ export async function indexBook(
           : settings.aiGatewayEmbeddingModel || 'text-embedding-3-small';
     aiLogger.embedding.start(embeddingModelName, allChunks.length);
 
-    const texts = allChunks.map((c) => c.text);
-    try {
-      const { embeddings } = await withRetryAndTimeout(
-        () =>
-          embedMany({
-            model: provider.getEmbeddingModel(),
-            values: texts,
-          }),
-        AI_TIMEOUTS.EMBEDDING_BATCH,
-        AI_RETRY_CONFIGS.EMBEDDING,
-      );
+    const embeddingModel = provider.getEmbeddingModel();
+    const batchSize = getEmbeddingBatchSize(settings);
+    let embeddingDimension: number | null = null;
+    let embeddedCount = 0;
 
-      for (let i = 0; i < allChunks.length; i++) {
-        allChunks[i]!.embedding = embeddings[i];
+    for (let offset = 0; offset < allChunks.length; offset += batchSize) {
+      const batchChunks = allChunks.slice(offset, offset + batchSize);
+      const batchIndex = Math.floor(offset / batchSize) + 1;
+      try {
+        const { embeddings } = await withRetryAndTimeout(
+          () =>
+            embedMany({
+              model: embeddingModel,
+              values: batchChunks.map((chunk) => chunk.text),
+            }),
+          AI_TIMEOUTS.INDEX_EMBEDDING_BATCH,
+          AI_RETRY_CONFIGS.INDEX_EMBEDDING,
+        );
+
+        if (embeddings.length !== batchChunks.length) {
+          throw new Error(
+            `Embedding batch ${batchIndex} returned ${embeddings.length} vectors for ${batchChunks.length} chunks.`,
+          );
+        }
+
+        for (let i = 0; i < embeddings.length; i++) {
+          const embedding = embeddings[i]!;
+          if (!Array.isArray(embedding) || embedding.length === 0) {
+            throw new Error(`Embedding batch ${batchIndex} returned an empty vector.`);
+          }
+          if (embeddingDimension === null) {
+            embeddingDimension = embedding.length;
+          } else if (embedding.length !== embeddingDimension) {
+            throw new Error(
+              `Embedding dimension changed from ${embeddingDimension} to ${embedding.length} in batch ${batchIndex}.`,
+            );
+          }
+          batchChunks[i]!.embedding = embedding;
+        }
+      } catch (e) {
+        aiLogger.embedding.error(`batch ${batchIndex}`, (e as Error).message);
+        throw e;
       }
-      onProgress?.({ current: allChunks.length, total: allChunks.length, phase: 'embedding' });
-      aiLogger.embedding.complete(embeddings.length, allChunks.length, embeddings[0]?.length || 0);
-    } catch (e) {
-      aiLogger.embedding.error('batch', (e as Error).message);
-      throw e;
+
+      embeddedCount += batchChunks.length;
+      onProgress?.({ current: embeddedCount, total: allChunks.length, phase: 'embedding' });
+      aiLogger.embedding.batch(embeddedCount, allChunks.length);
     }
+    aiLogger.embedding.complete(embeddedCount, allChunks.length, embeddingDimension || 0);
 
     onProgress?.({ current: 0, total: 2, phase: 'indexing' });
     aiLogger.store.saveChunks(bookHash, allChunks.length);

@@ -69,6 +69,7 @@ export async function withRetryAndTimeout<T>(
 export const AI_TIMEOUTS = {
   EMBEDDING_SINGLE: 30_000, // 30s for single embedding
   EMBEDDING_BATCH: 120_000, // 2min for batch embedding
+  INDEX_EMBEDDING_BATCH: 60_000, // 1min for a bounded indexing batch
   CHAT_STREAM: 60_000, // 60s for chat response start
   HEALTH_CHECK: 5_000, // 5s for health check
   OLLAMA_CONNECT: 5_000, // 5s for ollama connection
@@ -77,6 +78,7 @@ export const AI_TIMEOUTS = {
 // retry configs for different operations
 export const AI_RETRY_CONFIGS = {
   EMBEDDING: { maxRetries: 3, baseDelayMs: 2000, maxDelayMs: 15000 },
+  INDEX_EMBEDDING: { maxRetries: 1, baseDelayMs: 1000, maxDelayMs: 3000 },
   CHAT: { maxRetries: 2, baseDelayMs: 1000, maxDelayMs: 5000 },
   HEALTH_CHECK: { maxRetries: 1, baseDelayMs: 500, maxDelayMs: 1000 },
 } as const;
