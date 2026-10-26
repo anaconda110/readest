@@ -3,11 +3,12 @@
 - 更新日期：2026-10-26
 - 工作树：`/home/oraw/projects/00.Program/readest-codex-ai-analysis-rail`
 - 分支：`feat/ai-analysis-rail`
-- 代码 HEAD：`729e9411 feat(ai): scope chapter analysis retrieval`
+- 功能提交：`1918687b feat(ai): harden local retrieval and analysis rail`
+- 交接文档：本次 `docs: update AI analysis rail handoff` 提交
 - 基线：`origin/main`
-- 当前领先：22 个本地提交
+- 当前领先：26 个本地提交
 - 提交策略：只允许本地 commit，**禁止 push**
-- 当前工作树：clean
+- 当前工作树：交接文档提交后 clean
 
 ## 1. 结论
 
@@ -22,6 +23,8 @@
 - 笔记页可以正常编辑；搜索页可以启动索引、展示进度并检索结果。
 - “本章分析”只检索当前章节；“全书分析”会清除章节作用域。
 - Legacy IndexedDB 和 Reedy 两条检索路径都支持章节过滤。
+- 本地检索已支持 `BGE Small ZH` 语义模型，索引完成后搜索返回真实书中片段。
+- AI 设置可切换检索引擎、TF-IDF 降级、动态 Top-K、模型缓存软上限与清缓存。
 - en、zh-CN、zh-TW 三套翻译已同步。
 
 ## 2. 功能实现
@@ -106,6 +109,25 @@ TypeError: Cannot set properties of undefined (setting '_getInitializePromise')
 
 - `apps/readest-app/src/__tests__/app/reader/components/notebook/AIAssistantRuntime.test.tsx`
 
+### 2.5 本地检索与缓存
+
+主要文件：
+
+- `apps/readest-app/src/services/ai/rag/engines.ts`
+- `apps/readest-app/src/services/ai/rag/LocalEmbeddingModel.ts`
+- `apps/readest-app/src/services/ai/rag/settings.ts`
+- `apps/readest-app/src/services/ai/rag/topK.ts`
+- `apps/readest-app/src/components/settings/AIPanel.tsx`
+
+实现内容：
+
+- 检索引擎包括内置 TF-IDF、`BGE Small ZH`、`GTE Small`、`Multilingual E5 Small`、`All-MiniLM-L6-v2`、`Multilingual MiniLM L12`。
+- 语义模型通过 `@xenova/transformers` 在本地加载，模型文件写入浏览器缓存。
+- 默认启用 TF-IDF fallback；语义模型无法加载时仍可完成词法检索。
+- Top-K 默认值为 30，按索引 chunk 数自动提升到 15、30、50 或 80，并限制在 1–100。
+- 模型缓存软上限默认 `256 MB`，可配置 `32–4096 MB`；加载后按最旧优先清理，当前活跃模型保留。
+- 设置页提供模型状态刷新、fallback 开关、默认 Top-K、缓存上限和清除缓存。
+
 ## 3. 自动化验证
 
 ### 3.1 测试与静态检查
@@ -113,8 +135,8 @@ TypeError: Cannot set properties of undefined (setting '_getInitializePromise')
 2026-10-26 复跑结果：
 
 ```text
-Test Files  9 passed (9)
-Tests       108 passed (108)
+Test Files  13 passed (13)
+Tests       106 passed (106)
 ```
 
 测试命令：
@@ -123,14 +145,18 @@ Tests       108 passed (108)
 cd /home/oraw/projects/00.Program/readest-codex-ai-analysis-rail/apps/readest-app
 pnpm exec dotenv -e .env -e .env.test.local -- vitest run --maxWorkers=2 \
   src/__tests__/ai/ai-store.test.ts \
-  src/__tests__/reedy/TauriChatAdapter.test.ts \
-  src/__tests__/reedy/AgentRuntime.test.ts \
-  src/__tests__/reedy/BookRetriever.test.ts \
-  src/__tests__/reedy/ReedyDb.test.ts \
-  src/__tests__/reedy/builtins.test.ts \
-  src/__tests__/reedy/lookupPassage.test.ts \
+  src/__tests__/ai/analysisService.test.ts \
+  src/__tests__/ai/constants.test.ts \
+  src/__tests__/ai/rag-cache.test.ts \
+  src/__tests__/ai/rag-indexing.test.ts \
   src/__tests__/app/reader/components/notebook/AIAnalysisPanel.test.tsx \
-  src/__tests__/app/reader/components/notebook/AIAssistantRuntime.test.tsx
+  src/__tests__/app/reader/components/notebook/AIAssistantRuntime.test.tsx \
+  src/__tests__/components/settings/AIPanel.test.tsx \
+  src/__tests__/reedy/BookIndexer.test.ts \
+  src/__tests__/reedy/BookRetriever.test.ts \
+  src/__tests__/reedy/registry.test.ts \
+  src/__tests__/reedy/retrievalBackend.test.ts \
+  src/__tests__/store/ai-analysis-store.test.ts
 ```
 
 不要使用 `pnpm test -- --run ...`，该命令会进入 watch 模式。
@@ -138,7 +164,7 @@ pnpm exec dotenv -e .env -e .env.test.local -- vitest run --maxWorkers=2 \
 已通过：
 
 - `pnpm exec tsc --noEmit`
-- Biome lint（相关文件）
+- Biome lint（36 个相关文件，No fixes applied）
 - JSON 本地化文件校验
 - `git diff --check`
 
@@ -166,14 +192,17 @@ C:/ProgramData/anaconda3/python.exe
 
 已验证：
 
+- 窗口已恢复最大化，实机尺寸为 `1928×1048`。
 - 当前阅读窗口可以打开右侧 `AI 分析` 面板。
 - 左侧目录与右侧 AI 面板可以同时展开。
 - 五个页签全部渲染：`问答 / 本章分析 / 全书分析 / 笔记 / 搜索`。
 - 搜索页输入框和索引入口正常显示。
-- 索引页显示“索引这本书 / 开始索引”状态。
-- 点击“收起 AI 分析面板”后，面板消失。
-- 收起后“展开 AI 分析面板”入口存在，点击可重新展开。
-- 无 `Oops!` 或 `_getInitializePromise` 错误。
+- 收起/展开实测结果：`OPEN_INITIAL=True COLLAPSED=True EXPAND_ENTRY=True EXPANDED=True SEARCH_TAB=True`。
+- 五个页签逐项选择结果：每项均为 `selected=True pane=True`。
+- 索引实机进度覆盖 `loading-model / preparing / chunking / embedding / indexing`，观察到 `1039 / 1040` 个章节、`ProgressBar: 100%`。
+- 索引完成后搜索 `张元清`，返回本书真实片段，包含章节名与 `1.00 / 0.98 / 0.92` 等相关度。
+- 搜索页左上显示当前语义引擎 `BGE Small ZH`，说明模型已加载并用于本地检索。
+- 未观察到 `Oops!`、`_getInitializePromise` 或 CSP 错误。
 
 UI Automation 标识：
 
@@ -188,6 +217,7 @@ UI Automation 标识：
 ```text
 C:/Users/Tom/AppData/Local/Temp/readest-toc-ai-shortcut.png
 C:/Users/Tom/AppData/Local/Temp/readest-current-reader.png
+C:/Users/Tom/AppData/Local/Temp/readest-live.png
 ```
 
 ## 4. Windows 构建与安装
@@ -221,50 +251,69 @@ pnpm exec tauri build --target x86_64-pc-windows-msvc --bundles nsis --config C:
 
 ```text
 C:/Users/Tom/AppData/Local/Temp/readest-win-build-20261026/target/x86_64-pc-windows-msvc/release/bundle/nsis/Readest_0.12.16_x64-setup.exe
-SHA-256: 6246f8be67046ba0f4ecf889b298d2c0abb6e848208c68a09712a0b3cf23ee77
+SHA-256: 8111b8912a79ee11ca7b7efa5c3ec666d9638e218c9ad5b7b751ce0989fdb4e0
 ```
 
 已复制到 Downloads：
 
 ```text
-C:/Users/Tom/Downloads/Readest_0.12.16_x64-ai-analysis-rail-20261026-150040.exe
+C:/Users/Tom/Downloads/Readest_0.12.16_x64-ai-analysis-rail-20261026-181131.exe
+SHA-256: 8111b8912a79ee11ca7b7efa5c3ec666d9638e218c9ad5b7b751ce0989fdb4e0
 ```
 
 已替换安装目录：
 
 ```text
 D:/Program Files/Readest/Readest.exe
-SHA-256: 3f4fa9134c750c152092f67bdaba0bd22d36bcfddc66b81b6844fc4456b37bd5
+SHA-256: e5d9cb9899a3befccb1e34661af1906dbad55d6b2aeef74901e9347ec7672eba
 ```
 
-该哈希与构建产物中的 `Readest.exe` 一致，新版已成功启动。
+NSIS 静默覆盖安装退出码为 `0`，安装后版本为 `0.12.16`，已启动并完成上述实机验收。
+
+构建主程序：
+
+```text
+C:/Users/Tom/AppData/Local/Temp/readest-win-build-20261026/target/x86_64-pc-windows-msvc/release/readest.exe
+SHA-256: 4dcc371506515dbdd8233b88eaa395eca1d20fc49becf13e868402dc97157007
+```
+
+安装后哈希与构建主程序不完全相同；`cmp` 仅在以下三个连续字节出现差异：
+
+```text
+offset 80508273–80508275
+构建产物：ASCII UNK
+安装后：  ASCII NSS
+```
+
+其余文件内容一致，判定为 NSIS 安装/资源标记差异，不影响已启动版本的功能。
 
 覆盖前备份：
 
 ```text
-C:/Users/Tom/AppData/Local/Temp/Readest-before-ai-chapter-scope-20261026-150040.exe
-SHA-256: 8cf3bd6934d7ab26f6b84841c8fe23c27238e0f1533e012bee68620c1a959960
+C:/Users/Tom/AppData/Local/Temp/Readest-before-ai-analysis-rail-20261026.exe
+SHA-256: 7012142ba5023d551fb8f194111891d080a8da2fc5a8ebf6ba8148ba291dcfba
 ```
 
 ## 5. 当前验证边界
 
-真实 AI 问答仍需要：
+真实 AI 问答质量仍需要：
 
 - 有效的 AI/API 配置。
-- 已完成书籍索引。
 
-没有这些外部条件时，可验证：
+本轮已确认：
 
 - AI 面板展开/收起。
 - 五页签渲染和切换。
-- 索引入口与索引状态。
-- 搜索界面与错误/未索引提示。
+- 索引进度与完成状态。
+- `BGE Small ZH` 本地语义索引和真实搜索结果。
 - 笔记编辑。
 - 章节作用域相关单元测试。
 
 本轮未额外覆盖：
 
 - 有效密钥下的真实问答质量。
+- 所有可选语义模型的逐个下载与切换。
+- 大缓存超过软上限后的完整磁盘清理实机演练。
 - 暗色、RTL、窄窗口的逐项实机截图。
 - 搜索命中后跨章节跳转的最终内容一致性。
 
