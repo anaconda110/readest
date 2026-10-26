@@ -16,11 +16,16 @@ function unitVec(values: number[]): number[] {
 }
 
 function fakeModel(
-  opts: { id?: string; embedFn?: (texts: string[]) => Promise<number[][]> } = {},
+  opts: {
+    id?: string;
+    embedFn?: (texts: string[]) => Promise<number[][]>;
+    prepare?: EmbeddingModel['prepare'];
+  } = {},
 ): EmbeddingModel {
   return {
     id: opts.id ?? 'fake-model',
     dim: DIM,
+    prepare: opts.prepare,
     embed: opts.embedFn ?? (async (texts) => texts.map(() => unitVec([1, 0, 0, 0]))),
   };
 }
@@ -161,6 +166,69 @@ describe('BookRetriever', () => {
     expect(res.status).toBe('stale_index');
     expect(res.reason).toMatch(/text-embedding-3-small/);
     expect(res.reason).toMatch(/nomic-embed-text/);
+  });
+
+  it('returns stale_index when the active model has a different vector dimension', async () => {
+    await reedy.upsertBookMeta({
+      bookHash: 'bk1',
+      indexingStatus: 'indexed',
+      chunkCount: 5,
+      embeddingModel: 'fake-model',
+      embeddingDim: DIM,
+      indexedAt: Date.now(),
+      error: null,
+    });
+    const res = await retriever.search({
+      bookHash: 'bk1',
+      query: 'q',
+      k: 5,
+      activeEmbeddingModel: { ...fakeModel(), dim: DIM * 2 },
+    });
+    expect(res.status).toBe('stale_index');
+    expect(res.reason).toMatch(new RegExp(`${DIM}-dimension`));
+    expect(res.reason).toMatch(new RegExp(`produces ${DIM * 2};`));
+  });
+
+  it('matches the resolved fallback identity and dimensions against index metadata', async () => {
+    let prepared = false;
+    const model: EmbeddingModel = {
+      get id() {
+        return prepared ? 'tfidf' : 'Xenova/semantic-model';
+      },
+      get dim() {
+        return prepared ? 2 : 384;
+      },
+      async prepare() {
+        prepared = true;
+      },
+      async embed(texts) {
+        return texts.map(() => unitVec([1, 0]));
+      },
+    };
+    await reedy.upsertBookMeta({
+      bookHash: 'fallback-book',
+      indexingStatus: 'indexed',
+      chunkCount: 1,
+      embeddingModel: 'tfidf',
+      embeddingDim: 2,
+      indexedAt: Date.now(),
+      error: null,
+    });
+    await reedy.ensureEmbeddingsTable(2);
+    await reedy.insertChunks([chunk('f0', 'fallback-book', 0, 'fallback match text', 0)]);
+    await reedy.insertEmbeddings([
+      { chunkId: 'f0', bookHash: 'fallback-book', embedding: unitVec([1, 0]) },
+    ]);
+
+    const res = await retriever.search({
+      bookHash: 'fallback-book',
+      query: 'fallback',
+      k: 3,
+      activeEmbeddingModel: model,
+    });
+
+    expect(res.status).toBe('ok');
+    expect(res.passages[0]?.id).toBe('f0');
   });
 
   // -------------------------------------------------------------------------
@@ -317,6 +385,22 @@ describe('BookRetriever', () => {
       expect(res.reason).toMatch(/timeout|abort/i);
       // FTS still finds the lexical match for "introduction"
       expect(res.passages.length).toBeGreaterThan(0);
+      expect(res.passages[0]!.id).toBe('a0');
+    });
+
+    it('falls back to FTS-only with status=degraded when model preparation fails', async () => {
+      const res = await retriever.search({
+        bookHash: 'bookA',
+        query: 'introduction',
+        k: 3,
+        activeEmbeddingModel: fakeModel({
+          prepare: async () => {
+            throw new Error('model unavailable');
+          },
+        }),
+      });
+      expect(res.status).toBe('degraded');
+      expect(res.reason).toMatch(/preparation failed.*model unavailable/i);
       expect(res.passages[0]!.id).toBe('a0');
     });
   });

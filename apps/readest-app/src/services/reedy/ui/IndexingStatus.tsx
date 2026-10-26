@@ -6,8 +6,15 @@ import { useTranslation } from '@/hooks/useTranslation';
 
 export type IndexingPhase = 'idle' | 'indexing' | 'indexed' | 'failed' | 'empty';
 
+export type IndexingProgressPhase =
+  | 'loading-model'
+  | 'preparing'
+  | 'chunking'
+  | 'embedding'
+  | 'indexing';
+
 export interface IndexingProgress {
-  phase: 'chunking' | 'embedding';
+  phase: IndexingProgressPhase;
   current: number;
   total: number;
   percent: number;
@@ -66,19 +73,36 @@ export function IndexingStatus({
 
   if (status === 'indexing') {
     const pct = progress?.percent ?? 0;
-    const progressLabel =
-      progress?.phase === 'chunking'
-        ? _('Analyzing chapters...')
-        : progress?.phase === 'embedding'
-          ? _('Generating embeddings...')
-          : _('Preparing...');
+    const progressLabel = (() => {
+      switch (progress?.phase) {
+        case 'loading-model':
+          return _('Loading embedding model...');
+        case 'preparing':
+          return _('Preparing embedding model...');
+        case 'chunking':
+          return _('Analyzing chapters...');
+        case 'embedding':
+          return _('Generating embeddings...');
+        case 'indexing':
+          return _('Saving index...');
+        default:
+          return _('Preparing...');
+      }
+    })();
     const progressCount = progress
       ? progress.phase === 'chunking'
         ? _('{{current}} / {{total}} sections', {
             current: progress.current,
             total: progress.total,
           })
-        : `${progress.current} / ${progress.total} ${_('chunks')}`
+        : progress.phase === 'embedding'
+          ? `${progress.current} / ${progress.total} ${_('chunks')}`
+          : progress.phase === 'indexing'
+            ? _('{{current}} / {{total}} steps', {
+                current: progress.current,
+                total: progress.total,
+              })
+            : null
       : null;
 
     return (

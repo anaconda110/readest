@@ -1,5 +1,5 @@
-import { embed, embedMany } from 'ai';
 import { getAIProvider } from '@/services/ai/providers';
+import { createLocalEmbeddingModel } from '@/services/ai/rag/LocalEmbeddingModel';
 import type { AISettings } from '@/services/ai/types';
 import type { ChatModel } from './ChatModel';
 import type { EmbeddingModel } from './EmbeddingModel';
@@ -19,10 +19,10 @@ export function createReedyModels(settings: AISettings): ReedyModels {
   const provider = getAIProvider(settings);
   return {
     chat: adaptChatModel(provider.getModel(), chatModelIdFor(settings)),
-    embedding: adaptEmbeddingModel(
-      provider.getEmbeddingModel(),
-      embeddingModelIdFor(settings),
-      settings,
+    embedding: createLocalEmbeddingModel(
+      settings.ragEngine,
+      settings.ragFallback ?? true,
+      settings.ragCacheLimitMB,
     ),
   };
 }
@@ -120,58 +120,5 @@ function chatModelIdFor(settings: AISettings): string {
       );
     case 'openrouter':
       return settings.openrouterModel || 'openai/gpt-4o-mini';
-  }
-}
-
-// ---------------------------------------------------------------------------
-// EmbeddingModel adapter
-// ---------------------------------------------------------------------------
-
-function adaptEmbeddingModel(
-  vercelModel: import('ai').EmbeddingModel,
-  id: string,
-  settings: AISettings,
-): EmbeddingModel {
-  const batchSize = settings.provider === 'ollama' ? 4 : 16;
-  let dim: number | null = null;
-  return {
-    id,
-    get dim(): number {
-      if (dim == null) {
-        throw new Error('embedding dim unknown — call embed([sample]) once before reading dim');
-      }
-      return dim;
-    },
-    batchSize,
-    async embed(texts, opts) {
-      if (texts.length === 0) return [];
-      if (texts.length === 1) {
-        const { embedding } = await embed({
-          model: vercelModel,
-          value: texts[0]!,
-          abortSignal: opts?.signal,
-        });
-        dim ??= embedding.length;
-        return [embedding];
-      }
-      const { embeddings } = await embedMany({
-        model: vercelModel,
-        values: texts,
-        abortSignal: opts?.signal,
-      });
-      if (embeddings.length > 0) dim ??= embeddings[0]!.length;
-      return embeddings;
-    },
-  };
-}
-
-function embeddingModelIdFor(settings: AISettings): string {
-  switch (settings.provider) {
-    case 'ollama':
-      return settings.ollamaEmbeddingModel || 'nomic-embed-text';
-    case 'ai-gateway':
-      return settings.aiGatewayEmbeddingModel || 'openai/text-embedding-3-small';
-    case 'openrouter':
-      return settings.openrouterEmbeddingModel || 'openai/text-embedding-3-small';
   }
 }

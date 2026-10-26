@@ -75,29 +75,20 @@ describe('createReedyModels — chat metadata table', () => {
   });
 });
 
-describe('createReedyModels — embedding routing', () => {
-  it('uses ollama embedding setting for the ollama provider', () => {
+describe('createReedyModels — local embedding engine', () => {
+  it('uses the local BGE engine independently of the chat provider', () => {
     const { embedding } = createReedyModels(
-      settings({ provider: 'ollama', ollamaEmbeddingModel: 'mxbai-embed-large' }),
+      settings({ provider: 'ai-gateway', ragEngine: 'Xenova/bge-small-zh-v1.5' }),
     );
-    expect(embedding.id).toBe('mxbai-embed-large');
-    expect(embedding.batchSize).toBe(4);
+    expect(embedding.id).toBe('Xenova/bge-small-zh-v1.5');
+    expect(embedding.dim).toBe(512);
+    expect(embedding.batchSize).toBe(8);
   });
 
-  it('uses larger batchSize for hosted providers', () => {
-    const { embedding } = createReedyModels(settings({ provider: 'ai-gateway' }));
-    expect(embedding.batchSize).toBe(16);
-  });
-
-  it('falls back to text-embedding-3-small when openrouter embedding is empty', () => {
-    const { embedding } = createReedyModels(
-      settings({ provider: 'openrouter', openrouterEmbeddingModel: '' }),
-    );
-    expect(embedding.id).toBe('openai/text-embedding-3-small');
-  });
-
-  it('embedding.dim throws if called before any embed() round-trip', () => {
-    const { embedding } = createReedyModels(settings({ provider: 'ai-gateway' }));
-    expect(() => embedding.dim).toThrow(/dim unknown/);
+  it('supports the built-in TF-IDF fallback engine without a model download', () => {
+    const { embedding } = createReedyModels(settings({ ragEngine: 'tfidf' }));
+    expect(embedding.id).toBe('tfidf');
+    expect(embedding.dim).toBe(128);
+    expect(embedding.batchSize).toBe(32);
   });
 });

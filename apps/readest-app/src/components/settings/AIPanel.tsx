@@ -12,9 +12,27 @@ import {
 } from '@/services/ai/providers/OpenRouterProvider';
 import { DEFAULT_AI_SETTINGS, GATEWAY_MODELS, MODEL_PRICING } from '@/services/ai/constants';
 import type { AISettings, AIProviderName } from '@/services/ai/types';
+import { DEFAULT_RAG_ENGINE, RAG_ENGINES, getRagEngineInfo } from '@/services/ai/rag/engines';
+import {
+  clearRagModelCache,
+  getRagEngineRuntimeStatus,
+  type RagEngineRuntimeStatus,
+} from '@/services/ai/rag/LocalEmbeddingModel';
+import {
+  DEFAULT_RAG_CACHE_LIMIT_MB,
+  MAX_RAG_CACHE_LIMIT_MB,
+  MIN_RAG_CACHE_LIMIT_MB,
+} from '@/services/ai/rag/settings';
 import { exportReedyMetricsBundle } from '@/services/reedy/instrumentation';
 import { isTauriAppPlatform } from '@/services/environment';
-import { BoxedList, SettingLabel, SettingsRow, SettingsSwitchRow } from './primitives';
+import {
+  BoxedList,
+  SettingLabel,
+  SettingsInput,
+  SettingsRow,
+  SettingsSelect,
+  SettingsSwitchRow,
+} from './primitives';
 
 type ConnectionStatus = 'idle' | 'testing' | 'success' | 'error';
 type CustomModelStatus = 'idle' | 'validating' | 'valid' | 'invalid';
@@ -67,6 +85,13 @@ const getModelOptions = (): ModelOption[] => [
   },
 ];
 
+function formatCacheSize(bytes: number): string {
+  if (bytes <= 0) return '0 MB';
+  const mb = bytes / (1024 * 1024);
+  if (mb < 1) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${mb >= 10 ? mb.toFixed(1) : mb.toFixed(2)} MB`;
+}
+
 const AIPanel: React.FC = () => {
   const _ = useTranslation();
   const { envConfig, appService } = useEnv();
@@ -86,6 +111,16 @@ const AIPanel: React.FC = () => {
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
   const [gatewayKey, setGatewayKey] = useState(aiSettings.aiGatewayApiKey ?? '');
+  const [ragEngine, setRagEngine] = useState(aiSettings.ragEngine ?? DEFAULT_RAG_ENGINE);
+  const [ragFallback, setRagFallback] = useState(aiSettings.ragFallback ?? true);
+  const [topKDefault, setTopKDefault] = useState(aiSettings.topKDefault ?? 30);
+  const [ragCacheLimitMB, setRagCacheLimitMB] = useState(
+    aiSettings.ragCacheLimitMB ?? DEFAULT_RAG_CACHE_LIMIT_MB,
+  );
+  const [ragRuntimeStatus, setRagRuntimeStatus] = useState<RagEngineRuntimeStatus | null>(null);
+  const [ragStatusLoading, setRagStatusLoading] = useState(false);
+  const [ragCacheClearing, setRagCacheClearing] = useState(false);
+  const [ragStatusError, setRagStatusError] = useState('');
 
   // ---- OpenRouter (OpenAI-compatible) state ----
   const [openrouterKey, setOpenrouterKey] = useState(aiSettings.openrouterApiKey ?? '');
@@ -121,6 +156,7 @@ const AIPanel: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState('');
 
   const isMounted = useRef(false);
+  const ragStatusRequestId = useRef(0);
   const modelOptions = getModelOptions();
 
   const settingsRef = useRef(settings);
@@ -141,6 +177,43 @@ const AIPanel: React.FC = () => {
     },
     [envConfig, setSettings, saveSettings],
   );
+
+  const refreshRagRuntimeStatus = useCallback(
+    async (engineId = ragEngine) => {
+      const requestId = ++ragStatusRequestId.current;
+      setRagStatusLoading(true);
+      setRagStatusError('');
+      try {
+        const status = await getRagEngineRuntimeStatus(engineId);
+        if (requestId === ragStatusRequestId.current) {
+          setRagRuntimeStatus(status);
+        }
+      } catch (error) {
+        if (requestId === ragStatusRequestId.current) {
+          setRagRuntimeStatus(null);
+          setRagStatusError(error instanceof Error ? error.message : String(error));
+        }
+      } finally {
+        if (requestId === ragStatusRequestId.current) {
+          setRagStatusLoading(false);
+        }
+      }
+    },
+    [ragEngine],
+  );
+
+  useEffect(() => {
+    if (!enabled) {
+      ragStatusRequestId.current++;
+      setRagRuntimeStatus(null);
+      setRagStatusLoading(false);
+      return;
+    }
+    void refreshRagRuntimeStatus(ragEngine);
+    return () => {
+      ragStatusRequestId.current++;
+    };
+  }, [enabled, ragEngine, refreshRagRuntimeStatus]);
 
   const fetchOllamaModels = useCallback(async () => {
     if (!ollamaUrl || !enabled) return;
@@ -402,6 +475,41 @@ const AIPanel: React.FC = () => {
   };
 
   const disabledSection = !enabled ? 'opacity-50 pointer-events-none select-none' : '';
+  const ragEngineInfo = getRagEngineInfo(ragEngine);
+  const ragEngineDetails = ragEngineInfo.semantic
+    ? _('{{size}} MB model · {{dim}} dimensions · batch size {{batchSize}}', {
+        size: ragEngineInfo.sizeMB,
+        dim: ragEngineInfo.dim,
+        batchSize: ragEngineInfo.batchSize,
+      })
+    : _('Built-in · {{dim}} dimensions', { dim: ragEngineInfo.dim });
+
+  let ragStatusDescription = _('Checking cache...');
+  if (ragStatusError) {
+    ragStatusDescription = _('Could not inspect the model cache: {{error}}', {
+      error: ragStatusError,
+    });
+  } else if (!ragEngineInfo.semantic) {
+    ragStatusDescription = _('Built-in engine, no model download required.');
+  } else if (ragRuntimeStatus?.usedFallback) {
+    ragStatusDescription = _('Fallback active: {{reason}}', {
+      reason: ragRuntimeStatus.fallbackReason ?? _('semantic model unavailable'),
+    });
+  } else if (ragRuntimeStatus?.loaded) {
+    ragStatusDescription = ragRuntimeStatus.cached
+      ? _('Model loaded in memory; cache: {{size}} ({{count}} files).', {
+          size: formatCacheSize(ragRuntimeStatus.bytes),
+          count: ragRuntimeStatus.fileCount,
+        })
+      : _('Model loaded in memory; not cached for the next launch.');
+  } else if (ragRuntimeStatus?.cached) {
+    ragStatusDescription = _('Downloaded and cached: {{size}} ({{count}} files).', {
+      size: formatCacheSize(ragRuntimeStatus.bytes),
+      count: ragRuntimeStatus.fileCount,
+    });
+  } else if (!ragStatusLoading) {
+    ragStatusDescription = _('Not downloaded. It will be fetched on the first index or search.');
+  }
 
   return (
     <div className='my-4 w-full space-y-6'>
@@ -741,6 +849,145 @@ const AIPanel: React.FC = () => {
           </div>
         </BoxedList>
       )}
+
+      <BoxedList
+        title={_('Local Retrieval')}
+        className={disabledSection}
+        description={_(
+          'Index books with an on-device embedding model. Changing the engine requires re-indexing books before their existing indexes can be searched.',
+        )}
+      >
+        <SettingsRow
+          label={_('Retrieval Engine')}
+          description={ragEngineDetails}
+          data-setting-id='settings.ai.ragEngine'
+        >
+          <SettingsSelect
+            value={ragEngine}
+            ariaLabel={_('Retrieval Engine')}
+            disabled={!enabled}
+            onChange={(event) => {
+              const nextEngine = event.target.value;
+              setRagEngine(nextEngine);
+              setRagRuntimeStatus(null);
+              void saveAiSetting('ragEngine', nextEngine);
+            }}
+            options={RAG_ENGINES.map((engine) => ({
+              value: engine.id,
+              label: `${engine.name} (${engine.semantic ? `${engine.sizeMB} MB` : _('Built-in')})`,
+            }))}
+          />
+        </SettingsRow>
+
+        <SettingsRow
+          label={_('Model Status')}
+          description={ragStatusDescription}
+          data-setting-id='settings.ai.ragModelStatus'
+        >
+          <button
+            type='button'
+            className='btn btn-ghost btn-xs gap-1'
+            disabled={!enabled || ragStatusLoading}
+            onClick={() => void refreshRagRuntimeStatus(ragEngine)}
+          >
+            <PiArrowsClockwise className={clsx('size-3.5', ragStatusLoading && 'animate-spin')} />
+            {_('Refresh')}
+          </button>
+        </SettingsRow>
+
+        <SettingsSwitchRow
+          label={_('Fall back to TF-IDF')}
+          description={_(
+            'If a semantic model cannot load, use the built-in lexical index instead of failing retrieval.',
+          )}
+          checked={ragFallback}
+          disabled={!enabled || !ragEngineInfo.semantic}
+          data-setting-id='settings.ai.ragFallback'
+          onChange={() => {
+            const next = !ragFallback;
+            setRagFallback(next);
+            void saveAiSetting('ragFallback', next);
+          }}
+        />
+
+        <SettingsRow
+          label={_('Default Top-K')}
+          description={_(
+            'Used when book size is unknown. Larger indexes automatically retrieve 15, 30, 50, or 80 passages.',
+          )}
+          data-setting-id='settings.ai.topKDefault'
+        >
+          <SettingsInput
+            type='number'
+            min={1}
+            max={100}
+            step={1}
+            value={topKDefault}
+            aria-label={_('Default Top-K')}
+            disabled={!enabled}
+            onChange={(event) => {
+              const next = Math.min(100, Math.max(1, Math.round(Number(event.target.value) || 1)));
+              setTopKDefault(next);
+              void saveAiSetting('topKDefault', next);
+            }}
+          />
+        </SettingsRow>
+
+        <SettingsRow
+          label={_('Cache Limit (MB)')}
+          description={_(
+            'Downloaded models are pruned oldest-first after a model loads. Active models are kept even if they exceed this soft limit.',
+          )}
+          data-setting-id='settings.ai.ragCacheLimitMB'
+        >
+          <SettingsInput
+            type='number'
+            min={MIN_RAG_CACHE_LIMIT_MB}
+            max={MAX_RAG_CACHE_LIMIT_MB}
+            step={32}
+            value={ragCacheLimitMB}
+            aria-label={_('Cache Limit (MB)')}
+            disabled={!enabled}
+            onChange={(event) => {
+              const next = Math.min(
+                4096,
+                Math.max(
+                  MIN_RAG_CACHE_LIMIT_MB,
+                  Math.round(Number(event.target.value) || MIN_RAG_CACHE_LIMIT_MB),
+                ),
+              );
+              setRagCacheLimitMB(next);
+              void saveAiSetting('ragCacheLimitMB', next);
+            }}
+          />
+        </SettingsRow>
+
+        <SettingsRow
+          label={_('Clear Model Cache')}
+          description={_('Cached model files can be downloaded again when they are next needed.')}
+          data-setting-id='settings.ai.clearRagCache'
+        >
+          <button
+            type='button'
+            className='btn btn-outline btn-sm'
+            disabled={!enabled || !ragEngineInfo.semantic || ragCacheClearing}
+            onClick={async () => {
+              setRagCacheClearing(true);
+              setRagStatusError('');
+              try {
+                await clearRagModelCache(ragEngine);
+                await refreshRagRuntimeStatus(ragEngine);
+              } catch (error) {
+                setRagStatusError(error instanceof Error ? error.message : String(error));
+              } finally {
+                setRagCacheClearing(false);
+              }
+            }}
+          >
+            {ragCacheClearing ? _('Clearing...') : _('Clear cache')}
+          </button>
+        </SettingsRow>
+      </BoxedList>
 
       <BoxedList
         title={_('Reedy Retrieval (Beta)')}

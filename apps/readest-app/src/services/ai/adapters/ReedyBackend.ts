@@ -1,4 +1,4 @@
-import { type Tool, embed, embedMany } from 'ai';
+import type { Tool } from 'ai';
 import type { BookDoc } from '@/libs/document';
 import type { AppService } from '@/types/system';
 import { ReedyDb } from '@/services/reedy/db/ReedyDb';
@@ -12,11 +12,11 @@ import {
   type ReedyMetricsWriter,
 } from '@/services/reedy/instrumentation';
 import type { DatabaseService } from '@/types/database';
-import { getAIProvider } from '../providers';
 import type { AISettings, EmbeddingProgress } from '../types';
+import { createLocalEmbeddingModel } from '../rag/LocalEmbeddingModel';
 import {
-  getEmbeddingModelName,
   type BackendIndexOptions,
+  type IndexStats,
   type RetrievalBackend,
   type SearchBookResponse,
 } from './retrievalBackend';
@@ -27,10 +27,9 @@ const REEDY_DB_FILE = 'reedy.db';
 const DEFAULT_TOP_K = 5;
 
 /**
- * Reedy retrieval backend. Lazy-opens reedy.db on first use, wraps the
- * existing AI provider's embedding model in Reedy's EmbeddingModel shape,
- * and exposes a Vercel `lookupPassage` tool the adapter passes through to
- * `streamText({ tools: ... })`.
+ * Reedy retrieval backend. Lazy-opens reedy.db on first use, uses the local
+ * RAG embedding model (independent from the chat provider), and exposes a
+ * Vercel `lookupPassage` tool the adapter passes through to `streamText`.
  *
  * Only constructed when {@link selectBackend} returns `kind === 'reedy'`,
  * which requires both `aiSettings.reedy.enabled` and `isTauri()`.
@@ -59,7 +58,11 @@ export class ReedyBackend implements RetrievalBackend {
     settings: AISettings,
     private readonly appVersion: string = '0.0.0-dev',
   ) {
-    this.model = adaptEmbeddingModel(settings);
+    this.model = createLocalEmbeddingModel(
+      settings.ragEngine,
+      settings.ragFallback ?? true,
+      settings.ragCacheLimitMB,
+    );
     this.sessionId = randomSessionId();
     this.dbReady = this.appService.openDatabase(REEDY_DB_KEY, REEDY_DB_FILE, 'Data', {
       experimental: ['index_method'],
@@ -79,7 +82,21 @@ export class ReedyBackend implements RetrievalBackend {
   async isIndexed(bookHash: string): Promise<boolean> {
     const { reedy } = await this.reedyReady;
     const meta = await reedy.getBookMeta(bookHash);
-    return meta?.indexingStatus === 'indexed' || meta?.indexingStatus === 'empty_index';
+    return meta?.indexingStatus === 'indexed' && meta.chunkCount > 0;
+  }
+
+  async getIndexStats(bookHash: string): Promise<IndexStats | null> {
+    const { reedy } = await this.reedyReady;
+    const meta = await reedy.getBookMeta(bookHash);
+    if (!meta) return null;
+    return {
+      indexed: meta.indexingStatus === 'indexed' && meta.chunkCount > 0,
+      status: meta.indexingStatus,
+      chunkCount: meta.chunkCount,
+      embeddingModel: meta.embeddingModel,
+      embeddingDim: meta.embeddingDim,
+      error: meta.error,
+    };
   }
 
   async indexBook(
@@ -94,8 +111,11 @@ export class ReedyBackend implements RetrievalBackend {
         onProgress: options?.onProgress
           ? (event): void => {
               const phaseMap: Record<typeof event.phase, EmbeddingProgress['phase']> = {
+                'loading-model': 'loading-model',
+                preparing: 'preparing',
                 chunking: 'chunking',
                 embedding: 'embedding',
+                indexing: 'indexing',
               };
               options.onProgress?.({
                 current: event.current,
@@ -215,53 +235,6 @@ function mapToolEventToMetricEvent(
 function randomSessionId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
   return `session-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-/**
- * Wrap the active AI provider's Vercel `EmbeddingModel` into Reedy's
- * narrower interface (id + dim + embed). We don't import provider modules
- * directly — they're already constructed by `getAIProvider(settings)`.
- */
-function adaptEmbeddingModel(settings: AISettings): ReedyEmbeddingModel {
-  const provider = getAIProvider(settings);
-  const vercelModel = provider.getEmbeddingModel();
-  const id = getEmbeddingModelName(settings);
-  const batchSize = settings.provider === 'ollama' ? 4 : 16;
-
-  // Cache the dim after the first round-trip so we don't re-probe per batch.
-  let dim: number | null = null;
-
-  return {
-    id,
-    get dim(): number {
-      if (dim == null) {
-        throw new Error(
-          'embedding model dim unknown — call embed([sample]) once before reading dim',
-        );
-      }
-      return dim;
-    },
-    batchSize,
-    async embed(texts, opts): Promise<number[][]> {
-      if (texts.length === 0) return [];
-      if (texts.length === 1) {
-        const { embedding } = await embed({
-          model: vercelModel,
-          value: texts[0]!,
-          abortSignal: opts?.signal,
-        });
-        dim ??= embedding.length;
-        return [embedding];
-      }
-      const { embeddings } = await embedMany({
-        model: vercelModel,
-        values: texts,
-        abortSignal: opts?.signal,
-      });
-      if (embeddings.length > 0) dim ??= embeddings[0]!.length;
-      return embeddings;
-    },
-  };
 }
 
 export { DEFAULT_TOP_K };

@@ -38,6 +38,17 @@ export interface AISettings {
   maxContextChunks: number;
   indexingMode: 'on-demand' | 'background';
 
+  /** Local model used for book indexing and query embeddings, independent of the chat provider. */
+  ragEngine: string;
+  /** Fall back to the built-in TF-IDF index when a semantic model cannot load. */
+  ragFallback?: boolean;
+  /** Retrieval breadth when no book index statistics are available. */
+  topKDefault: number;
+  /** Optional size-aware retrieval breadth overrides. */
+  topKTiers?: { maxChunks: number; topK: number }[];
+  /** Soft storage budget shown and enforced by retrieval settings. */
+  ragCacheLimitMB?: number;
+
   /**
    * Reedy MVP retrieval (Turso vector + Tantivy FTS + CFI citations).
    * MVP is desktop-only — the runtime gate in `selectBackend()` enforces
@@ -93,7 +104,7 @@ export interface IndexingState {
 export interface EmbeddingProgress {
   current: number;
   total: number;
-  phase: 'chunking' | 'embedding' | 'indexing';
+  phase: 'loading-model' | 'preparing' | 'chunking' | 'embedding' | 'indexing';
 }
 
 // stored AI conversation for a book
@@ -112,4 +123,41 @@ export interface AIMessage {
   role: 'user' | 'assistant';
   content: string;
   createdAt: number;
+}
+
+export type AIAnalysisKind = 'chapter' | 'book';
+
+export type AIAnalysisStatus = 'queued' | 'running' | 'complete' | 'error' | 'cancelled';
+
+/** A passage that grounded an analysis report. */
+export interface AIAnalysisSource {
+  id: string;
+  chapterTitle: string | null;
+  sectionIndex: number;
+  text: string;
+  score: number;
+  cfi?: string;
+  pageNumber?: number;
+}
+
+/**
+ * A durable chapter/book analysis result. The report id is stable for a
+ * particular book + scope, so regenerating replaces the previous output.
+ */
+export interface AIAnalysisReport {
+  id: string;
+  bookHash: string;
+  bookTitle: string;
+  kind: AIAnalysisKind;
+  sectionIndex?: number;
+  chapterTitle?: string;
+  content: string;
+  model: string;
+  status: AIAnalysisStatus;
+  error?: string;
+  sources: AIAnalysisSource[];
+  /** Explains what evidence the model was allowed to inspect. */
+  coverage?: string;
+  createdAt: number;
+  updatedAt: number;
 }

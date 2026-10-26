@@ -1,3 +1,6 @@
+import { DEFAULT_RAG_ENGINE } from './rag/engines';
+import { DEFAULT_RAG_CACHE_LIMIT_MB } from './rag/settings';
+import { DEFAULT_TOP_K, DEFAULT_TOP_K_TIERS } from './rag/topK';
 import type { AISettings } from './types';
 
 // cheapest popular models as of 2025
@@ -37,5 +40,10 @@ export const DEFAULT_AI_SETTINGS: AISettings = {
   spoilerProtection: true,
   maxContextChunks: 10,
   indexingMode: 'on-demand',
+  ragEngine: DEFAULT_RAG_ENGINE,
+  ragFallback: true,
+  topKDefault: DEFAULT_TOP_K,
+  topKTiers: DEFAULT_TOP_K_TIERS.map((tier) => ({ ...tier })),
+  ragCacheLimitMB: DEFAULT_RAG_CACHE_LIMIT_MB,
   reedy: { enabled: false },
 };

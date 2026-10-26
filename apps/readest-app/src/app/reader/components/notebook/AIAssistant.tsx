@@ -9,7 +9,7 @@ import {
   type ThreadHistoryAdapter,
 } from '@assistant-ui/react';
 
-import { useTranslation, type TranslationFunc } from '@/hooks/useTranslation';
+import { useTranslation } from '@/hooks/useTranslation';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useBookDataStore } from '@/store/bookDataStore';
 import { useReaderStore } from '@/store/readerStore';
@@ -21,18 +21,23 @@ import {
   LegacyIdbBackend,
   ReedyBackend,
   ReedySourceStore,
-  getEmbeddingModelName,
   selectBackend,
   type RetrievalBackend,
   type SourceItem,
 } from '@/services/ai/adapters';
-import type { EmbeddingProgress, AISettings, AIMessage } from '@/services/ai/types';
+import type {
+  AIAnalysisSource,
+  EmbeddingProgress,
+  AISettings,
+  AIMessage,
+} from '@/services/ai/types';
+import { getRagEngineDisplayName } from '@/services/ai/rag/engines';
 import type { RetrievedChunk } from '@/services/reedy/retrieval/BookRetriever';
 import { useEnv } from '@/context/EnvContext';
 import { isTauriAppPlatform } from '@/services/environment';
 import type { AppService } from '@/types/system';
 import type { BookNote } from '@/types/book';
-import { ReedyAssistant } from '@/services/reedy/ui/ReedyAssistant';
+import { ReedyAssistant, type ReedyIndexState } from '@/services/reedy/ui/ReedyAssistant';
 import type { ReadingContextSnapshot } from '@/services/reedy/tools/builtins/types';
 
 import { Thread } from '@/components/assistant/Thread';
@@ -43,19 +48,7 @@ import {
   AIAnalysisPanel,
   AIAnalysisSearch,
 } from './AIAnalysisPanel';
-
-function buildChapterAnalysisPrompt(_: TranslationFunc, chapterTitle: string | null): string {
-  return _(
-    'Analyze only the current chapter "{{title}}". Retrieval is scoped to this chapter. When retrieval tools are available, run several focused searches inside the chapter before answering; otherwise use the retrieved chapter passages already supplied. Cover key events, characters, themes, and open questions. Base every claim on retrieved passages, cite them, and state clearly when the passages are insufficient.',
-    { title: chapterTitle || _('Current chapter') },
-  );
-}
-
-function buildBookAnalysisPrompt(_: TranslationFunc): string {
-  return _(
-    'Analyze the whole book. When retrieval tools are available, run multiple focused searches across the book before answering; otherwise use the retrieved passages already supplied. Cover major themes, characters, structure, and unresolved questions. Base every claim on retrieved passages, cite them, and state clearly when the passages are insufficient. Do not claim to have read every page.',
-  );
-}
+import { AIAnalysisWorkspace } from './AIAnalysisWorkspace';
 
 // Helper function to convert AIMessage array to ExportedMessageRepository format
 // Each message needs to be wrapped with { message, parentId } structure
@@ -105,7 +98,6 @@ const AIAssistantChat = ({
   bookTitle,
   authorName,
   currentPage,
-  chapterTitle,
   engineName,
   backend,
   sourceStore,
@@ -115,9 +107,8 @@ const AIAssistantChat = ({
   onResetIndex,
   notesContent,
   searchContent,
-  consumeSectionIndex,
-  onChapterAnalysisStart,
-  onBookAnalysisStart,
+  chapterContent,
+  bookContent,
   isLoading,
   isIndexed,
   isIndexing,
@@ -130,7 +121,6 @@ const AIAssistantChat = ({
   bookTitle: string;
   authorName: string;
   currentPage: number;
-  chapterTitle: string | null;
   engineName: string;
   backend: RetrievalBackend;
   sourceStore: ReedySourceStore;
@@ -140,9 +130,8 @@ const AIAssistantChat = ({
   onResetIndex: () => void;
   notesContent: ReactNode;
   searchContent: ReactNode;
-  consumeSectionIndex: () => number | undefined;
-  onChapterAnalysisStart: () => void;
-  onBookAnalysisStart: () => void;
+  chapterContent: ReactNode;
+  bookContent: ReactNode;
   isLoading: boolean;
   isIndexed: boolean;
   isIndexing: boolean;
@@ -150,7 +139,6 @@ const AIAssistantChat = ({
   indexError: string | null;
   onIndex: () => void;
 }) => {
-  const _ = useTranslation();
   const {
     activeConversationId,
     messages: storedMessages,
@@ -167,7 +155,6 @@ const AIAssistantChat = ({
     currentPage,
     backend,
     sourceStore,
-    consumeSectionIndex,
     onTurnStart: setCurrentTurnId,
   });
 
@@ -181,7 +168,6 @@ const AIAssistantChat = ({
       currentPage,
       backend,
       sourceStore,
-      consumeSectionIndex,
       onTurnStart: setCurrentTurnId,
     };
   });
@@ -228,9 +214,6 @@ const AIAssistantChat = ({
     };
   }, [activeConversationId, storedMessages, addMessage]);
 
-  const chapterAnalysisPrompt = buildChapterAnalysisPrompt(_, chapterTitle);
-  const bookAnalysisPrompt = buildBookAnalysisPrompt(_);
-
   return (
     <AIAssistantWithRuntime
       adapter={adapter}
@@ -244,10 +227,8 @@ const AIAssistantChat = ({
       engineName={engineName}
       notesContent={notesContent}
       searchContent={searchContent}
-      chapterAnalysisPrompt={chapterAnalysisPrompt}
-      bookAnalysisPrompt={bookAnalysisPrompt}
-      onChapterAnalysisStart={onChapterAnalysisStart}
-      onBookAnalysisStart={onBookAnalysisStart}
+      chapterContent={chapterContent}
+      bookContent={bookContent}
       isLoading={isLoading}
       isIndexed={isIndexed}
       isIndexing={isIndexing}
@@ -270,10 +251,8 @@ const AIAssistantWithRuntime = ({
   engineName,
   notesContent,
   searchContent,
-  chapterAnalysisPrompt,
-  bookAnalysisPrompt,
-  onChapterAnalysisStart,
-  onBookAnalysisStart,
+  chapterContent,
+  bookContent,
   isLoading,
   isIndexed,
   isIndexing,
@@ -292,10 +271,8 @@ const AIAssistantWithRuntime = ({
   engineName: string;
   notesContent: ReactNode;
   searchContent: ReactNode;
-  chapterAnalysisPrompt: string;
-  bookAnalysisPrompt: string;
-  onChapterAnalysisStart: () => void;
-  onBookAnalysisStart: () => void;
+  chapterContent: ReactNode;
+  bookContent: ReactNode;
   isLoading: boolean;
   isIndexed: boolean;
   isIndexing: boolean;
@@ -335,24 +312,10 @@ const AIAssistantWithRuntime = ({
             />
           )
         }
+        chapterContent={chapterContent}
+        bookContent={bookContent}
         notesContent={notesContent}
         searchContent={searchContent}
-        onAnalyzeChapter={
-          canAnalyze
-            ? () => {
-                onChapterAnalysisStart();
-                runtime.thread.append(chapterAnalysisPrompt);
-              }
-            : undefined
-        }
-        onAnalyzeBook={
-          canAnalyze
-            ? () => {
-                onBookAnalysisStart();
-                runtime.thread.append(bookAnalysisPrompt);
-              }
-            : undefined
-        }
       />
     </AssistantRuntimeProvider>
   );
@@ -464,7 +427,6 @@ const LegacyAIAssistant = ({
   const [indexError, setIndexError] = useState<string | null>(null);
   const [indexed, setIndexed] = useState(false);
   const [currentTurnId, setCurrentTurnId] = useState<string | null>(null);
-  const sectionScopeRef = useRef<number | undefined>(undefined);
 
   const bookHash = bookKey.split('-')[0] || '';
   const bookTitle = bookData?.book?.title || 'Unknown';
@@ -554,30 +516,20 @@ const LegacyAIAssistant = ({
     [bookKey, getView],
   );
 
+  const handleAnalysisSourceClick = useCallback(
+    (source: AIAnalysisSource) => {
+      if (source.cfi) getView(bookKey)?.goTo(source.cfi);
+    },
+    [bookKey, getView],
+  );
+
   const handleOpenAISettings = useCallback(() => {
     setSettingsDialogBookKey(bookKey);
     setRequestedPanel('AI');
     setSettingsDialogOpen(true);
   }, [bookKey, setRequestedPanel, setSettingsDialogBookKey, setSettingsDialogOpen]);
 
-  // Analysis actions queue a one-shot retrieval scope. The chat adapter
-  // consumes it at the start of the next turn, so ordinary follow-up
-  // questions are not accidentally constrained to the same chapter.
-  const handleChapterAnalysisStart = useCallback(() => {
-    sectionScopeRef.current = progress?.section?.current ?? 0;
-  }, [progress?.section?.current]);
-
-  const handleBookAnalysisStart = useCallback(() => {
-    sectionScopeRef.current = undefined;
-  }, []);
-
-  const consumeSectionIndex = useCallback(() => {
-    const sectionIndex = sectionScopeRef.current;
-    sectionScopeRef.current = undefined;
-    return sectionIndex;
-  }, []);
-
-  const engineName = getEmbeddingModelName(aiSettings ?? DEFAULT_AI_SETTINGS);
+  const engineName = getRagEngineDisplayName((aiSettings ?? DEFAULT_AI_SETTINGS).ragEngine);
   const notesContent = (
     <NotebookEditor
       bookKey={bookKey}
@@ -589,6 +541,7 @@ const LegacyAIAssistant = ({
   const searchContent = aiSettings?.enabled ? (
     <AIAnalysisSearch
       backend={backend}
+      aiSettings={aiSettings}
       bookHash={bookHash}
       currentPage={currentPage}
       spoilerProtection={aiSettings.spoilerProtection}
@@ -597,14 +550,63 @@ const LegacyAIAssistant = ({
       isIndexing={isIndexing}
       indexProgress={indexProgress}
       indexError={indexError}
+      indexedOverride={indexed}
     />
   ) : (
     <AIAnalysisSearch
       backend={null}
+      aiSettings={aiSettings ?? DEFAULT_AI_SETTINGS}
       bookHash={bookHash}
       currentPage={currentPage}
       spoilerProtection={aiSettings?.spoilerProtection ?? true}
       onResultClick={handleSearchResultClick}
+      indexedOverride={false}
+    />
+  );
+
+  const sectionIndex = progress?.section?.current ?? 0;
+  const chapterContent = (
+    <AIAnalysisWorkspace
+      kind='chapter'
+      aiSettings={aiSettings}
+      backend={backend}
+      bookDoc={bookData?.bookDoc ?? null}
+      bookHash={bookHash}
+      bookTitle={bookTitle}
+      authorName={authorName}
+      sectionIndex={sectionIndex}
+      chapterTitle={chapterTitle}
+      currentPage={currentPage}
+      isIndexed={indexed}
+      isLoadingIndex={isLoading}
+      isIndexing={isIndexing}
+      indexProgress={indexProgress}
+      indexError={indexError}
+      onIndex={handleIndex}
+      onOpenSettings={handleOpenAISettings}
+      onSourceClick={handleAnalysisSourceClick}
+    />
+  );
+  const bookContent = (
+    <AIAnalysisWorkspace
+      kind='book'
+      aiSettings={aiSettings}
+      backend={backend}
+      bookDoc={bookData?.bookDoc ?? null}
+      bookHash={bookHash}
+      bookTitle={bookTitle}
+      authorName={authorName}
+      sectionIndex={sectionIndex}
+      chapterTitle={chapterTitle}
+      currentPage={currentPage}
+      isIndexed={indexed}
+      isLoadingIndex={isLoading}
+      isIndexing={isIndexing}
+      indexProgress={indexProgress}
+      indexError={indexError}
+      onIndex={handleIndex}
+      onOpenSettings={handleOpenAISettings}
+      onSourceClick={handleAnalysisSourceClick}
     />
   );
 
@@ -613,6 +615,8 @@ const LegacyAIAssistant = ({
       <AIAnalysisPanel
         engineName={engineName}
         qaContent={<AIAnalysisDisabledState onOpenSettings={handleOpenAISettings} />}
+        chapterContent={chapterContent}
+        bookContent={bookContent}
         notesContent={notesContent}
         searchContent={searchContent}
       />
@@ -632,6 +636,8 @@ const LegacyAIAssistant = ({
             onIndex={() => void handleIndex()}
           />
         }
+        chapterContent={chapterContent}
+        bookContent={bookContent}
         notesContent={notesContent}
         searchContent={searchContent}
       />
@@ -645,7 +651,6 @@ const LegacyAIAssistant = ({
       bookTitle={bookTitle}
       authorName={authorName}
       currentPage={currentPage}
-      chapterTitle={chapterTitle}
       engineName={engineName}
       backend={backend}
       sourceStore={sourceStore}
@@ -655,9 +660,8 @@ const LegacyAIAssistant = ({
       onResetIndex={handleResetIndex}
       notesContent={notesContent}
       searchContent={searchContent}
-      consumeSectionIndex={consumeSectionIndex}
-      onChapterAnalysisStart={handleChapterAnalysisStart}
-      onBookAnalysisStart={handleBookAnalysisStart}
+      chapterContent={chapterContent}
+      bookContent={bookContent}
       isLoading={isLoading}
       isIndexed={indexed}
       isIndexing={isIndexing}
@@ -682,9 +686,9 @@ const ReedyAgentAssistantBridge = ({
   handleOpenAnnotations,
   onDeleteExcerpt,
 }: AIAssistantProps) => {
-  const _ = useTranslation();
   const { appService } = useEnv();
-  const { settings } = useSettingsStore();
+  const { settings, setSettingsDialogBookKey, setSettingsDialogOpen, setRequestedPanel } =
+    useSettingsStore();
   const getBookData = useBookDataStore((s) => s.getBookData);
   const getView = useReaderStore((s) => s.getView);
   const bookData = getBookData(bookKey);
@@ -695,12 +699,10 @@ const ReedyAgentAssistantBridge = ({
   const bookHash = bookKey.split('-')[0] || '';
   const aiSettings = settings?.aiSettings;
   const [indexed, setIndexed] = useState(false);
-  const [promptRequest, setPromptRequest] = useState<{
-    id: number;
-    text: string;
-    sectionIndex?: number;
-  } | null>(null);
-  const promptIdRef = useRef(0);
+  const [isLoadingIndex, setIsLoadingIndex] = useState(true);
+  const [isIndexing, setIsIndexing] = useState(false);
+  const [indexProgress, setIndexProgress] = useState<EmbeddingProgress | null>(null);
+  const [indexError, setIndexError] = useState<string | null>(null);
   const indexActionRef = useRef<(() => Promise<void>) | null>(null);
 
   const searchBackend = useMemo<RetrievalBackend | null>(() => {
@@ -725,14 +727,19 @@ const ReedyAgentAssistantBridge = ({
     [bookKey, getView],
   );
 
-  const handlePromptRequestHandled = useCallback((id: number) => {
-    setPromptRequest((current) => (current?.id === id ? null : current));
+  const handleIndexStateChange = useCallback((state: ReedyIndexState) => {
+    setIndexed(state.indexed);
+    setIsLoadingIndex(state.isLoading);
+    setIsIndexing(state.isIndexing);
+    setIndexProgress(state.progress);
+    setIndexError(state.error);
   }, []);
 
-  const queuePrompt = useCallback((text: string, sectionIndex?: number) => {
-    promptIdRef.current += 1;
-    setPromptRequest({ id: promptIdRef.current, text, sectionIndex });
-  }, []);
+  const handleOpenAISettings = useCallback(() => {
+    setSettingsDialogBookKey(bookKey);
+    setRequestedPanel('AI');
+    setSettingsDialogOpen(true);
+  }, [bookKey, setRequestedPanel, setSettingsDialogBookKey, setSettingsDialogOpen]);
 
   const handleIndexActionChange = useCallback((action: (() => Promise<void>) | null) => {
     indexActionRef.current = action;
@@ -747,7 +754,55 @@ const ReedyAgentAssistantBridge = ({
   if (!aiSettings || !appService || !bookData?.bookDoc) return null;
 
   const chapterTitle = readingContext.chapterTitle;
-  const engineName = getEmbeddingModelName(aiSettings);
+  const engineName = getRagEngineDisplayName(aiSettings.ragEngine);
+  const chapterContent = (
+    <AIAnalysisWorkspace
+      kind='chapter'
+      aiSettings={aiSettings}
+      backend={searchBackend}
+      bookDoc={bookData.bookDoc}
+      bookHash={bookHash}
+      bookTitle={bookData.book?.title || 'Unknown'}
+      authorName={bookData.book?.author || ''}
+      sectionIndex={readingContext.sectionIndex}
+      chapterTitle={chapterTitle}
+      currentPage={readingContext.pageNumber}
+      isIndexed={indexed}
+      isLoadingIndex={isLoadingIndex}
+      isIndexing={isIndexing}
+      indexProgress={indexProgress}
+      indexError={indexError}
+      onIndex={handleSearchIndex}
+      onOpenSettings={handleOpenAISettings}
+      onSourceClick={(source) => {
+        if (source.cfi) handleNavigate(source.cfi);
+      }}
+    />
+  );
+  const bookContent = (
+    <AIAnalysisWorkspace
+      kind='book'
+      aiSettings={aiSettings}
+      backend={searchBackend}
+      bookDoc={bookData.bookDoc}
+      bookHash={bookHash}
+      bookTitle={bookData.book?.title || 'Unknown'}
+      authorName={bookData.book?.author || ''}
+      sectionIndex={readingContext.sectionIndex}
+      chapterTitle={chapterTitle}
+      currentPage={readingContext.pageNumber}
+      isIndexed={indexed}
+      isLoadingIndex={isLoadingIndex}
+      isIndexing={isIndexing}
+      indexProgress={indexProgress}
+      indexError={indexError}
+      onIndex={handleSearchIndex}
+      onOpenSettings={handleOpenAISettings}
+      onSourceClick={(source) => {
+        if (source.cfi) handleNavigate(source.cfi);
+      }}
+    />
+  );
 
   return (
     <AIAnalysisPanel
@@ -761,12 +816,12 @@ const ReedyAgentAssistantBridge = ({
           aiSettings={aiSettings}
           readingContext={readingContext}
           onNavigateToCfi={handleNavigate}
-          promptRequest={promptRequest}
-          onPromptRequestHandled={handlePromptRequestHandled}
-          onIndexingPhaseChange={setIndexed}
+          onIndexStateChange={handleIndexStateChange}
           onIndexActionChange={handleIndexActionChange}
         />
       }
+      chapterContent={chapterContent}
+      bookContent={bookContent}
       notesContent={
         <NotebookEditor
           bookKey={bookKey}
@@ -778,6 +833,7 @@ const ReedyAgentAssistantBridge = ({
       searchContent={
         <AIAnalysisSearch
           backend={searchBackend}
+          aiSettings={aiSettings}
           bookHash={bookHash}
           currentPage={readingContext.pageNumber}
           spoilerProtection={aiSettings.spoilerProtection}
@@ -788,13 +844,6 @@ const ReedyAgentAssistantBridge = ({
           }}
         />
       }
-      onAnalyzeChapter={
-        indexed
-          ? () =>
-              queuePrompt(buildChapterAnalysisPrompt(_, chapterTitle), readingContext.sectionIndex)
-          : undefined
-      }
-      onAnalyzeBook={indexed ? () => queuePrompt(buildBookAnalysisPrompt(_)) : undefined}
     />
   );
 };

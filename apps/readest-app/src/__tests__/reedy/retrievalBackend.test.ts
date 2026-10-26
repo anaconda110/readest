@@ -1,9 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import {
-  getEmbeddingModelName,
-  selectBackend,
-  type RetrievalBackend,
-} from '@/services/ai/adapters/retrievalBackend';
+import { selectBackend, type RetrievalBackend } from '@/services/ai/adapters/retrievalBackend';
 import { ReedySourceStore } from '@/services/ai/adapters/reedySourceStore';
 import { DEFAULT_AI_SETTINGS } from '@/services/ai/constants';
 import type { AISettings } from '@/services/ai/types';
@@ -78,44 +74,6 @@ describe('selectBackend', () => {
       reedy: fakeReedy,
     });
     expect(out.kind).toBe('legacy-idb');
-  });
-});
-
-describe('getEmbeddingModelName', () => {
-  it('returns the configured embedding model for each provider', () => {
-    expect(
-      getEmbeddingModelName({
-        ...DEFAULT_AI_SETTINGS,
-        provider: 'ollama',
-        ollamaEmbeddingModel: 'mxbai-embed-large',
-      }),
-    ).toBe('mxbai-embed-large');
-    expect(
-      getEmbeddingModelName({
-        ...DEFAULT_AI_SETTINGS,
-        provider: 'ai-gateway',
-        aiGatewayEmbeddingModel: 'custom/gateway-embedding',
-      }),
-    ).toBe('custom/gateway-embedding');
-    expect(
-      getEmbeddingModelName({
-        ...DEFAULT_AI_SETTINGS,
-        provider: 'openrouter',
-        openrouterEmbeddingModel: 'custom/openrouter-embedding',
-      }),
-    ).toBe('custom/openrouter-embedding');
-  });
-
-  it('uses the same provider defaults as the Reedy embedding adapter', () => {
-    expect(getEmbeddingModelName({ ...DEFAULT_AI_SETTINGS, provider: 'ollama' })).toBe(
-      'nomic-embed-text',
-    );
-    expect(getEmbeddingModelName({ ...DEFAULT_AI_SETTINGS, provider: 'ai-gateway' })).toBe(
-      'openai/text-embedding-3-small',
-    );
-    expect(getEmbeddingModelName({ ...DEFAULT_AI_SETTINGS, provider: 'openrouter' })).toBe(
-      'openai/text-embedding-3-small',
-    );
   });
 });
 

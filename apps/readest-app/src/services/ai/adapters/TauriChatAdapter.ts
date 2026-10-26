@@ -3,6 +3,7 @@ import type { ChatModelAdapter, ChatModelRunResult } from '@assistant-ui/react';
 import { getAIProvider } from '../providers';
 import { aiLogger } from '../logger';
 import { buildSystemPrompt } from '../prompts';
+import { getTopKForChunkCount } from '../rag/topK';
 import type { AISettings, ScoredChunk } from '../types';
 import type { RetrievalBackend } from './retrievalBackend';
 import type { ReedySourceStore } from './reedySourceStore';
@@ -142,9 +143,10 @@ export function createTauriAdapter(getOptions: () => TauriAdapterOptions): ChatM
           let chunks: ScoredChunk[] = [];
           if (await backend.isIndexed(bookHash)) {
             try {
+              const stats = await backend.getIndexStats?.(bookHash);
               chunks =
                 (await backend.searchForSystemPrompt?.(query, bookHash, {
-                  topK: settings.maxContextChunks || 5,
+                  topK: getTopKForChunkCount(stats?.chunkCount ?? 0, settings),
                   spoilerBoundPosition: settings.spoilerProtection ? currentPage : undefined,
                   sectionIndex,
                 })) ?? [];

@@ -65,8 +65,18 @@ export interface ReedyAssistantProps {
   onPromptRequestHandled?: (id: number) => void;
   /** Lets the outer five-tab shell enable analysis actions only when ready. */
   onIndexingPhaseChange?: (indexed: boolean) => void;
+  /** Keeps the shared analysis/search tabs in sync with Reedy indexing. */
+  onIndexStateChange?: (state: ReedyIndexState) => void;
   /** Exposes the async index action to the search tab. */
   onIndexActionChange?: (action: (() => Promise<void>) | null) => void;
+}
+
+export interface ReedyIndexState {
+  indexed: boolean;
+  isLoading: boolean;
+  isIndexing: boolean;
+  progress: IndexingProgress | null;
+  error: string | null;
 }
 
 /**
@@ -89,6 +99,7 @@ export function ReedyAssistant({
   promptRequest = null,
   onPromptRequestHandled,
   onIndexingPhaseChange,
+  onIndexStateChange,
   onIndexActionChange,
 }: ReedyAssistantProps) {
   const _ = useTranslation();
@@ -280,23 +291,35 @@ export function ReedyAssistant({
 
   // Indexing state — tracked locally to avoid layering yet another store.
   const [indexingPhase, setIndexingPhase] = useState<IndexingPhase>('idle');
+  const [isIndexStateLoading, setIsIndexStateLoading] = useState(true);
   const [indexProgress, setIndexProgress] = useState<IndexingProgress | null>(null);
   const [indexError, setIndexError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!reedy || !bookHash) return;
     let alive = true;
-    void reedy.db.getBookMeta(bookHash).then((meta) => {
-      if (!alive) return;
-      setIndexError(null);
-      if (!meta) setIndexingPhase('idle');
-      else if (meta.indexingStatus === 'indexed') setIndexingPhase('indexed');
-      else if (meta.indexingStatus === 'empty_index') setIndexingPhase('empty');
-      else if (meta.indexingStatus === 'failed') {
+    setIsIndexStateLoading(true);
+    void reedy.db
+      .getBookMeta(bookHash)
+      .then((meta) => {
+        if (!alive) return;
+        setIndexError(null);
+        if (!meta) setIndexingPhase('idle');
+        else if (meta.indexingStatus === 'indexed') setIndexingPhase('indexed');
+        else if (meta.indexingStatus === 'empty_index') setIndexingPhase('empty');
+        else if (meta.indexingStatus === 'failed') {
+          setIndexingPhase('failed');
+          setIndexError(meta.error ?? null);
+        } else setIndexingPhase('idle');
+      })
+      .catch((error) => {
+        if (!alive) return;
         setIndexingPhase('failed');
-        setIndexError(meta.error ?? null);
-      } else setIndexingPhase('idle');
-    });
+        setIndexError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (alive) setIsIndexStateLoading(false);
+      });
     return () => {
       alive = false;
     };
@@ -305,6 +328,16 @@ export function ReedyAssistant({
   useEffect(() => {
     onIndexingPhaseChange?.(indexingPhase === 'indexed');
   }, [indexingPhase, onIndexingPhaseChange]);
+
+  useEffect(() => {
+    onIndexStateChange?.({
+      indexed: indexingPhase === 'indexed',
+      isLoading: isIndexStateLoading,
+      isIndexing: indexingPhase === 'indexing',
+      progress: indexProgress,
+      error: indexError,
+    });
+  }, [indexError, indexProgress, indexingPhase, isIndexStateLoading, onIndexStateChange]);
 
   // Reset the conversation log when the book or session changes.
   useEffect(() => {
@@ -323,13 +356,14 @@ export function ReedyAssistant({
         },
       });
       const meta = await reedy.db.getBookMeta(bookHash);
-      setIndexingPhase(
-        meta?.indexingStatus === 'empty_index'
-          ? 'empty'
-          : meta?.indexingStatus === 'indexed'
-            ? 'indexed'
-            : 'failed',
-      );
+      if (meta?.indexingStatus === 'empty_index') {
+        setIndexingPhase('empty');
+      } else if (meta?.indexingStatus === 'indexed') {
+        setIndexingPhase('indexed');
+      } else {
+        setIndexingPhase('failed');
+        setIndexError(meta?.error ?? 'Indexing failed before a searchable index was created.');
+      }
     } catch (err) {
       console.error('[Reedy] index failed', err);
       const message = err instanceof Error ? err.message : typeof err === 'string' ? err : '';

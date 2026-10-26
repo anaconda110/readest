@@ -8,6 +8,7 @@ import {
   AIAnalysisSearch,
 } from '@/app/reader/components/notebook/AIAnalysisPanel';
 import type { RetrievalBackend } from '@/services/ai/adapters';
+import { DEFAULT_AI_SETTINGS } from '@/services/ai/constants';
 
 vi.mock('@/hooks/useTranslation', () => ({
   useTranslation: () => (value: string, options?: Record<string, number | string>) => {
@@ -21,10 +22,19 @@ vi.mock('@/hooks/useTranslation', () => ({
 
 afterEach(cleanup);
 
+const aiSettings = { ...DEFAULT_AI_SETTINGS };
+
 function fakeBackend(overrides: Partial<RetrievalBackend> = {}): RetrievalBackend {
   return {
     kind: 'legacy-idb',
     isIndexed: vi.fn(async () => true),
+    getIndexStats: vi.fn(async () => ({
+      indexed: true,
+      status: 'indexed' as const,
+      chunkCount: 100,
+      embeddingModel: aiSettings.ragEngine,
+      embeddingDim: 512,
+    })),
     indexBook: vi.fn(async () => {}),
     clearBook: vi.fn(async () => {}),
     searchBook: vi.fn(async () => ({ status: 'ok' as const, results: [] })),
@@ -38,6 +48,8 @@ describe('AIAnalysisPanel', () => {
       <AIAnalysisPanel
         engineName='custom-embedding-model'
         qaContent={<div>Q&A content</div>}
+        chapterContent={<div>Chapter content</div>}
+        bookContent={<div>Book content</div>}
         notesContent={<div>Notes content</div>}
         searchContent={<div>Search content</div>}
       />,
@@ -56,20 +68,21 @@ describe('AIAnalysisPanel', () => {
     );
     expect(
       screen.getByRole('tab', { name: 'Chapter Analysis' }).getAttribute('aria-controls'),
-    ).toBe('ai-analysis-panel-qa');
+    ).toBe('ai-analysis-panel-chapter');
+    expect(screen.getByRole('tab', { name: 'Book Analysis' }).getAttribute('aria-controls')).toBe(
+      'ai-analysis-panel-book',
+    );
   });
 
-  it('switches tabs and routes analysis actions through the Q&A content', () => {
-    const onAnalyzeChapter = vi.fn();
-    const onAnalyzeBook = vi.fn();
+  it('keeps chapter and book analysis in their own tab panels', () => {
     render(
       <AIAnalysisPanel
         engineName='embed'
         qaContent={<div>Q&A content</div>}
+        chapterContent={<div>Chapter content</div>}
+        bookContent={<div>Book content</div>}
         notesContent={<div>Notes content</div>}
         searchContent={<div>Search content</div>}
-        onAnalyzeChapter={onAnalyzeChapter}
-        onAnalyzeBook={onAnalyzeBook}
       />,
     );
 
@@ -77,22 +90,30 @@ describe('AIAnalysisPanel', () => {
     expect(screen.getByRole('tab', { name: 'Notes' }).getAttribute('aria-selected')).toBe('true');
 
     fireEvent.click(screen.getByRole('tab', { name: 'Chapter Analysis' }));
-    expect(onAnalyzeChapter).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('tab', { name: 'Q&A' }).getAttribute('aria-selected')).toBe('true');
+    expect(
+      screen.getByRole('tab', { name: 'Chapter Analysis' }).getAttribute('aria-selected'),
+    ).toBe('true');
+    expect(screen.getByRole('tabpanel', { name: 'Chapter Analysis' })).toBeTruthy();
+    expect(screen.getByText('Chapter content')).toBeTruthy();
+    expect(screen.queryByRole('tabpanel', { name: 'Q&A' })).toBeNull();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Book Analysis' }));
-    expect(onAnalyzeBook).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('tab', { name: 'Book Analysis' }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
+    expect(screen.getByRole('tabpanel', { name: 'Book Analysis' })).toBeTruthy();
+    expect(screen.getByText('Book content')).toBeTruthy();
   });
 
-  it('moves focus between tabs with arrow keys without triggering analysis actions', () => {
-    const onAnalyzeChapter = vi.fn();
+  it('moves focus between tabs with arrow keys without changing the active panel', () => {
     render(
       <AIAnalysisPanel
         engineName='embed'
         qaContent={<div>Q&A content</div>}
+        chapterContent={<div>Chapter content</div>}
+        bookContent={<div>Book content</div>}
         notesContent={<div>Notes content</div>}
         searchContent={<div>Search content</div>}
-        onAnalyzeChapter={onAnalyzeChapter}
       />,
     );
 
@@ -102,7 +123,7 @@ describe('AIAnalysisPanel', () => {
     fireEvent.keyDown(qaTab, { key: 'ArrowRight' });
 
     expect(document.activeElement).toBe(chapterTab);
-    expect(onAnalyzeChapter).not.toHaveBeenCalled();
+    expect(screen.getByRole('tab', { name: 'Q&A' }).getAttribute('aria-selected')).toBe('true');
   });
 
   it('keeps the five-tab shell usable while AI is disabled', () => {
@@ -127,6 +148,24 @@ describe('AIAnalysisPanel', () => {
 });
 
 describe('AIAnalysisIndexState', () => {
+  it.each([
+    ['loading-model', 'Loading embedding model...', null],
+    ['preparing', 'Preparing embedding model...', null],
+    ['indexing', 'Saving index...', '1 / 2 steps'],
+  ] as const)('maps the %s phase to truthful progress copy', (phase, label, count) => {
+    render(
+      <AIAnalysisIndexState
+        isLoading={false}
+        isIndexing={true}
+        progress={{ phase, current: 1, total: 2 }}
+        onIndex={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(label)).toBeTruthy();
+    if (count) expect(screen.getByText(count)).toBeTruthy();
+  });
+
   it('shows chapter progress while a book is being prepared for indexing', () => {
     render(
       <AIAnalysisIndexState
@@ -166,6 +205,7 @@ describe('AIAnalysisSearch', () => {
     const backend = fakeBackend({ isIndexed: vi.fn(async () => false) });
     const props = {
       backend,
+      aiSettings,
       bookHash: 'book-1',
       currentPage: 0,
       spoilerProtection: false,
@@ -189,6 +229,7 @@ describe('AIAnalysisSearch', () => {
     const backend = fakeBackend({ isIndexed: vi.fn(async () => false) });
     render(
       <AIAnalysisSearch
+        aiSettings={aiSettings}
         backend={backend}
         bookHash='book-1'
         currentPage={10}
@@ -218,6 +259,7 @@ describe('AIAnalysisSearch', () => {
 
     render(
       <AIAnalysisSearch
+        aiSettings={aiSettings}
         backend={backend}
         bookHash='book-1'
         currentPage={0}
@@ -250,6 +292,7 @@ describe('AIAnalysisSearch', () => {
     });
     render(
       <AIAnalysisSearch
+        aiSettings={aiSettings}
         backend={backend}
         bookHash='book-1'
         currentPage={0}
@@ -272,6 +315,7 @@ describe('AIAnalysisSearch', () => {
     const onIndex = vi.fn();
     render(
       <AIAnalysisSearch
+        aiSettings={aiSettings}
         backend={backend}
         bookHash='book-1'
         currentPage={0}
@@ -293,6 +337,7 @@ describe('AIAnalysisSearch', () => {
     const backend = fakeBackend({ isIndexed: vi.fn(async () => false) });
     render(
       <AIAnalysisSearch
+        aiSettings={aiSettings}
         backend={backend}
         bookHash='book-1'
         currentPage={0}
@@ -330,6 +375,7 @@ describe('AIAnalysisSearch', () => {
 
     render(
       <AIAnalysisSearch
+        aiSettings={aiSettings}
         backend={backend}
         bookHash='book-1'
         currentPage={10}
@@ -344,7 +390,7 @@ describe('AIAnalysisSearch', () => {
 
     expect(await screen.findByText('A matching passage')).toBeTruthy();
     expect(backend.searchBook).toHaveBeenCalledWith('matching', 'book-1', {
-      topK: 8,
+      topK: 15,
       spoilerBoundPosition: 10,
     });
 
@@ -352,10 +398,45 @@ describe('AIAnalysisSearch', () => {
     expect(onResultClick).toHaveBeenCalledWith('epubcfi(/6/4!/2/2)', undefined);
   });
 
+  it('uses a wider Top-K tier for a large index', async () => {
+    const backend = fakeBackend({
+      getIndexStats: vi.fn(async () => ({
+        indexed: true,
+        status: 'indexed' as const,
+        chunkCount: 5_000,
+        embeddingModel: aiSettings.ragEngine,
+        embeddingDim: 512,
+      })),
+    });
+    render(
+      <AIAnalysisSearch
+        aiSettings={aiSettings}
+        backend={backend}
+        bookHash='book-1'
+        currentPage={0}
+        spoilerProtection={false}
+        onResultClick={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search this book' }), {
+      target: { value: 'many chunks' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    await waitFor(() =>
+      expect(backend.searchBook).toHaveBeenCalledWith('many chunks', 'book-1', {
+        topK: 50,
+        spoilerBoundPosition: undefined,
+      }),
+    );
+  });
+
   it('shows a no-results state after a successful empty search', async () => {
     const backend = fakeBackend();
     render(
       <AIAnalysisSearch
+        aiSettings={aiSettings}
         backend={backend}
         bookHash='book-1'
         currentPage={0}
@@ -391,6 +472,7 @@ describe('AIAnalysisSearch', () => {
     });
     render(
       <AIAnalysisSearch
+        aiSettings={aiSettings}
         backend={backend}
         bookHash='book-1'
         currentPage={0}
@@ -418,6 +500,7 @@ describe('AIAnalysisSearch', () => {
     });
     render(
       <AIAnalysisSearch
+        aiSettings={aiSettings}
         backend={backend}
         bookHash='book-1'
         currentPage={0}
@@ -448,6 +531,7 @@ describe('AIAnalysisSearch', () => {
     });
     render(
       <AIAnalysisSearch
+        aiSettings={aiSettings}
         backend={backend}
         bookHash='book-1'
         currentPage={0}
@@ -474,6 +558,7 @@ describe('AIAnalysisSearch', () => {
   it('explains when no retrieval backend is available', () => {
     render(
       <AIAnalysisSearch
+        aiSettings={aiSettings}
         backend={null}
         bookHash='book-1'
         currentPage={0}

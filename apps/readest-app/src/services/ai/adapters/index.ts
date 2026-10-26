@@ -1,6 +1,6 @@
 export { createTauriAdapter } from './TauriChatAdapter';
 export type { TauriAdapterOptions } from './TauriChatAdapter';
-export { getEmbeddingModelName, selectBackend } from './retrievalBackend';
+export { selectBackend } from './retrievalBackend';
 export type {
   RetrievalBackend,
   RetrievalBackendKind,

@@ -15,66 +15,45 @@ import {
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { RetrievalBackend } from '@/services/ai/adapters';
-import type { EmbeddingProgress } from '@/services/ai/types';
+import { getTopKForChunkCount } from '@/services/ai/rag/topK';
+import type { AISettings, EmbeddingProgress } from '@/services/ai/types';
 
 export type AIAnalysisTab = 'qa' | 'chapter' | 'book' | 'notes' | 'search';
 
 interface AIAnalysisPanelProps {
   engineName: string;
   qaContent: ReactNode;
+  chapterContent?: ReactNode;
+  bookContent?: ReactNode;
   notesContent: ReactNode;
   searchContent: ReactNode;
-  /** Chapter/book analysis actions submit a prompt through the Q&A runtime. */
-  onAnalyzeChapter?: () => void;
-  onAnalyzeBook?: () => void;
 }
 
-const TAB_QA = 'qa';
-const TAB_NOTES = 'notes';
-const TAB_SEARCH = 'search';
-
-const panelId = (tab: typeof TAB_QA | typeof TAB_NOTES | typeof TAB_SEARCH) =>
-  `ai-analysis-panel-${tab}`;
+const panelId = (tab: AIAnalysisTab) => `ai-analysis-panel-${tab}`;
 
 /** Shared five-tab shell used by both the legacy and Reedy agent paths. */
 export function AIAnalysisPanel({
   engineName,
   qaContent,
+  chapterContent,
+  bookContent,
   notesContent,
   searchContent,
-  onAnalyzeChapter,
-  onAnalyzeBook,
 }: AIAnalysisPanelProps) {
   const _ = useTranslation();
-  const [activeTab, setActiveTab] = useState<Exclude<AIAnalysisTab, 'chapter' | 'book'>>('qa');
+  const [activeTab, setActiveTab] = useState<AIAnalysisTab>('qa');
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
-
-  const runAnalysis = useCallback((action?: () => void) => {
-    setActiveTab('qa');
-    action?.();
-  }, []);
 
   const tabs: {
     id: AIAnalysisTab;
     label: string;
-    controls: typeof TAB_QA | typeof TAB_NOTES | typeof TAB_SEARCH;
-    action?: () => void;
+    controls: AIAnalysisTab;
   }[] = [
-    { id: 'qa', label: _('Q&A'), controls: TAB_QA },
-    {
-      id: 'chapter',
-      label: _('Chapter Analysis'),
-      controls: TAB_QA,
-      action: () => runAnalysis(onAnalyzeChapter),
-    },
-    {
-      id: 'book',
-      label: _('Book Analysis'),
-      controls: TAB_QA,
-      action: () => runAnalysis(onAnalyzeBook),
-    },
-    { id: 'notes', label: _('Notes'), controls: TAB_NOTES },
-    { id: 'search', label: _('Search'), controls: TAB_SEARCH },
+    { id: 'qa', label: _('Q&A'), controls: 'qa' },
+    { id: 'chapter', label: _('Chapter Analysis'), controls: 'chapter' },
+    { id: 'book', label: _('Book Analysis'), controls: 'book' },
+    { id: 'notes', label: _('Notes'), controls: 'notes' },
+    { id: 'search', label: _('Search'), controls: 'search' },
   ];
 
   const handleTabKeyDown = useCallback(
@@ -120,7 +99,7 @@ export function AIAnalysisPanel({
               aria-selected={selected}
               aria-controls={panelId(tab.controls)}
               tabIndex={selected ? 0 : -1}
-              onClick={() => (tab.action ? tab.action() : setActiveTab(tab.id as typeof activeTab))}
+              onClick={() => setActiveTab(tab.id)}
               onKeyDown={(event) => handleTabKeyDown(event, index)}
               title={tab.label}
               className={clsx(
@@ -138,7 +117,7 @@ export function AIAnalysisPanel({
 
       <div className='flex min-h-0 flex-1 flex-col'>
         <div
-          id={panelId(TAB_QA)}
+          id={panelId('qa')}
           className='min-h-0 flex-1 flex-col data-[active=true]:flex'
           role='tabpanel'
           aria-labelledby='ai-analysis-tab-qa'
@@ -148,7 +127,27 @@ export function AIAnalysisPanel({
           {qaContent}
         </div>
         <div
-          id={panelId(TAB_NOTES)}
+          id={panelId('chapter')}
+          className='min-h-0 flex-1 flex-col data-[active=true]:flex'
+          role='tabpanel'
+          aria-labelledby='ai-analysis-tab-chapter'
+          data-active={activeTab === 'chapter'}
+          hidden={activeTab !== 'chapter'}
+        >
+          {chapterContent}
+        </div>
+        <div
+          id={panelId('book')}
+          className='min-h-0 flex-1 flex-col data-[active=true]:flex'
+          role='tabpanel'
+          aria-labelledby='ai-analysis-tab-book'
+          data-active={activeTab === 'book'}
+          hidden={activeTab !== 'book'}
+        >
+          {bookContent}
+        </div>
+        <div
+          id={panelId('notes')}
           className='min-h-0 flex-1 flex-col data-[active=true]:flex'
           role='tabpanel'
           aria-labelledby='ai-analysis-tab-notes'
@@ -158,7 +157,7 @@ export function AIAnalysisPanel({
           {notesContent}
         </div>
         <div
-          id={panelId(TAB_SEARCH)}
+          id={panelId('search')}
           className='min-h-0 flex-1 flex-col data-[active=true]:flex'
           role='tabpanel'
           aria-labelledby='ai-analysis-tab-search'
@@ -190,19 +189,36 @@ export function AIAnalysisIndexState({
   const _ = useTranslation();
   const progressPercent =
     progress && progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
-  const progressLabel =
-    progress?.phase === 'chunking'
-      ? _('Analyzing chapters...')
-      : progress?.phase === 'embedding'
-        ? _('Generating embeddings...')
-        : _('Preparing...');
+  const progressLabel = (() => {
+    switch (progress?.phase) {
+      case 'loading-model':
+        return _('Loading embedding model...');
+      case 'preparing':
+        return _('Preparing embedding model...');
+      case 'chunking':
+        return _('Analyzing chapters...');
+      case 'embedding':
+        return _('Generating embeddings...');
+      case 'indexing':
+        return _('Saving index...');
+      default:
+        return _('Preparing...');
+    }
+  })();
   const progressCount = progress
     ? progress.phase === 'chunking'
       ? _('{{current}} / {{total}} sections', {
           current: progress.current,
           total: progress.total,
         })
-      : `${progress.current} / ${progress.total} ${_('chunks')}`
+      : progress.phase === 'embedding'
+        ? `${progress.current} / ${progress.total} ${_('chunks')}`
+        : progress.phase === 'indexing'
+          ? _('{{current}} / {{total}} steps', {
+              current: progress.current,
+              total: progress.total,
+            })
+          : null
     : null;
 
   if (isLoading || isIndexing) {
@@ -312,6 +328,7 @@ export function AIAnalysisDisabledState({ onOpenSettings }: AIAnalysisDisabledSt
 
 interface AIAnalysisSearchProps {
   backend: RetrievalBackend | null;
+  aiSettings: AISettings;
   bookHash: string;
   currentPage: number;
   spoilerProtection: boolean;
@@ -328,6 +345,7 @@ interface AIAnalysisSearchProps {
 /** Semantic/keyword search over the same retrieval index used by Q&A. */
 export function AIAnalysisSearch({
   backend,
+  aiSettings,
   bookHash,
   currentPage,
   spoilerProtection,
@@ -411,8 +429,9 @@ export function AIAnalysisSearch({
       setHasSearched(true);
       setError(null);
       try {
+        const stats = await backend.getIndexStats?.(bookHash);
         const result = await backend.searchBook(trimmed, bookHash, {
-          topK: 8,
+          topK: getTopKForChunkCount(stats?.chunkCount ?? 0, aiSettings),
           spoilerBoundPosition: spoilerProtection ? currentPage : undefined,
         });
         setResponse(result);
@@ -426,7 +445,7 @@ export function AIAnalysisSearch({
         setIsSearching(false);
       }
     },
-    [_, backend, bookHash, currentPage, query, spoilerProtection],
+    [_, aiSettings, backend, bookHash, currentPage, query, spoilerProtection],
   );
 
   const showIndexPrompt = !!backend && (indexed === false || response?.status === 'not_indexed');

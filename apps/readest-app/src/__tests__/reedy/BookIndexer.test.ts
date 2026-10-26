@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { NodeDatabaseService } from '@/services/database/nodeDatabaseService';
 import { DatabaseService } from '@/types/database';
 import { migrate } from '@/services/database/migrate';
@@ -102,6 +102,119 @@ describe('BookIndexer', () => {
       "SELECT COUNT(*) as c FROM reedy_book_chunk_embeddings WHERE book_hash = 'bk-happy'",
     );
     expect(embRows[0]!.c).toBe(chunkRows[0]!.c);
+  });
+
+  it('prepares the model before reading its final id and dimensions', async () => {
+    let prepared = false;
+    let id = 'semantic-model';
+    let dim = DIM;
+    const model: EmbeddingModel = {
+      get id() {
+        if (!prepared) throw new Error('id read before prepare');
+        return id;
+      },
+      get dim() {
+        if (!prepared) throw new Error('dim read before prepare');
+        return dim;
+      },
+      async prepare() {
+        prepared = true;
+        id = 'tfidf';
+        dim = 2;
+      },
+      async embed(texts) {
+        return texts.map(() => [1, 0]);
+      },
+    };
+
+    await indexer.indexBook(
+      fakeBook([section('s0', '<p>Model identity resolves during preparation.</p>')]),
+      'bk-prepared-identity',
+      model,
+    );
+
+    const meta = await reedy.getBookMeta('bk-prepared-identity');
+    expect(meta?.embeddingModel).toBe('tfidf');
+    expect(meta?.embeddingDim).toBe(2);
+  });
+
+  it('forwards model loading and preparation progress in phase order', async () => {
+    const events: Array<{ phase: string; current: number; total: number }> = [];
+    const model = fakeModel({
+      async prepare({ onProgress } = {}) {
+        onProgress?.({ phase: 'loading-model', current: 1, total: 4 });
+        onProgress?.({ phase: 'preparing', current: 0, total: 1 });
+        onProgress?.({ phase: 'preparing', current: 1, total: 1 });
+      },
+    });
+
+    await indexer.indexBook(
+      fakeBook([section('s0', '<p>Progress should reach every indexing phase.</p>')]),
+      'bk-progress',
+      model,
+      { onProgress: (event) => events.push(event) },
+    );
+
+    expect(events.slice(0, 5)).toEqual([
+      { phase: 'preparing', current: 0, total: 1 },
+      { phase: 'loading-model', current: 1, total: 4 },
+      { phase: 'preparing', current: 0, total: 1 },
+      { phase: 'preparing', current: 1, total: 1 },
+      { phase: 'preparing', current: 1, total: 1 },
+    ]);
+    expect(events.some((event) => event.phase === 'chunking')).toBe(true);
+    expect(events.some((event) => event.phase === 'embedding')).toBe(true);
+    expect(events.at(-1)).toEqual({ phase: 'indexing', current: 2, total: 2 });
+  });
+
+  it('persists a failed status when model preparation fails', async () => {
+    const embed = vi.fn<EmbeddingModel['embed']>();
+    const model = fakeModel({
+      async prepare() {
+        throw new Error('model download failed');
+      },
+      embed,
+    });
+
+    await expect(
+      indexer.indexBook(
+        fakeBook([section('s0', '<p>Preparation failure should be visible.</p>')]),
+        'bk-prepare-failure',
+        model,
+      ),
+    ).rejects.toThrow(/download failed/);
+
+    const meta = await reedy.getBookMeta('bk-prepare-failure');
+    expect(meta?.indexingStatus).toBe('failed');
+    expect(meta?.error).toContain('download failed');
+    expect(meta?.embeddingModel).toBe('fake-model');
+    expect(embed).not.toHaveBeenCalled();
+  });
+
+  it('does not substitute TF-IDF when preparation is aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const embed = vi.fn<EmbeddingModel['embed']>();
+    const model = fakeModel({
+      async prepare({ signal } = {}) {
+        if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
+      },
+      embed,
+    });
+
+    await expect(
+      indexer.indexBook(
+        fakeBook([section('s0', '<p>Abort must remain a caller-directed failure.</p>')]),
+        'bk-aborted',
+        model,
+        { signal: controller.signal },
+      ),
+    ).rejects.toThrow(/aborted/i);
+
+    const meta = await reedy.getBookMeta('bk-aborted');
+    expect(meta?.indexingStatus).toBe('failed');
+    expect(meta?.embeddingModel).toBe('fake-model');
+    expect(embed).not.toHaveBeenCalled();
   });
 
   it('image-only book lands status=empty_index with chunk_count=0', async () => {

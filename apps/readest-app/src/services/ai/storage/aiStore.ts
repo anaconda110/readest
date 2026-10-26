@@ -1,16 +1,24 @@
-import { TextChunk, ScoredChunk, BookIndexMeta, AIConversation, AIMessage } from '../types';
+import {
+  TextChunk,
+  ScoredChunk,
+  BookIndexMeta,
+  AIConversation,
+  AIMessage,
+  AIAnalysisReport,
+} from '../types';
 import { aiLogger } from '../logger';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const lunr = require('lunr') as typeof import('lunr');
 
 const DB_NAME = 'readest-ai';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const CHUNKS_STORE = 'chunks';
 const META_STORE = 'bookMeta';
 const BM25_STORE = 'bm25Indices';
 const CONVERSATIONS_STORE = 'conversations';
 const MESSAGES_STORE = 'messages';
+const ANALYSIS_REPORTS_STORE = 'analysisReports';
 
 function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length) return 0;
@@ -32,6 +40,7 @@ class AIStore {
   private indexCache = new Map<string, lunr.Index>();
   private metaCache = new Map<string, BookIndexMeta>();
   private conversationCache = new Map<string, AIConversation[]>();
+  private analysisReportCache = new Map<string, AIAnalysisReport>();
 
   async recoverFromError(): Promise<void> {
     if (this.db) {
@@ -46,6 +55,7 @@ class AIStore {
     this.indexCache.clear();
     this.metaCache.clear();
     this.conversationCache.clear();
+    this.analysisReportCache.clear();
     await this.openDB();
   }
 
@@ -90,6 +100,12 @@ class AIStore {
         if (!db.objectStoreNames.contains(MESSAGES_STORE)) {
           const msgStore = db.createObjectStore(MESSAGES_STORE, { keyPath: 'id' });
           msgStore.createIndex('conversationId', 'conversationId', { unique: false });
+        }
+
+        // v4: durable chapter/book analysis reports
+        if (!db.objectStoreNames.contains(ANALYSIS_REPORTS_STORE)) {
+          const reportStore = db.createObjectStore(ANALYSIS_REPORTS_STORE, { keyPath: 'id' });
+          reportStore.createIndex('bookHash', 'bookHash', { unique: false });
         }
       };
     });
@@ -454,6 +470,76 @@ class AIStore {
         resolve(messages);
       };
       req.onerror = () => reject(req.error);
+    });
+  }
+
+  // chapter/book analysis report persistence
+
+  async saveAnalysisReport(report: AIAnalysisReport): Promise<void> {
+    const db = await this.openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(ANALYSIS_REPORTS_STORE, 'readwrite');
+      tx.objectStore(ANALYSIS_REPORTS_STORE).put(report);
+      tx.oncomplete = () => {
+        this.analysisReportCache.set(report.id, report);
+        resolve();
+      };
+      tx.onerror = () => {
+        aiLogger.store.error('saveAnalysisReport', tx.error?.message || 'TX error');
+        reject(tx.error);
+      };
+    });
+  }
+
+  async getAnalysisReport(id: string): Promise<AIAnalysisReport | null> {
+    if (this.analysisReportCache.has(id)) return this.analysisReportCache.get(id)!;
+    const db = await this.openDB();
+    return new Promise((resolve, reject) => {
+      const req = db
+        .transaction(ANALYSIS_REPORTS_STORE, 'readonly')
+        .objectStore(ANALYSIS_REPORTS_STORE)
+        .get(id);
+      req.onsuccess = () => {
+        const report = req.result as AIAnalysisReport | undefined;
+        if (report) this.analysisReportCache.set(id, report);
+        resolve(report || null);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async getAnalysisReports(bookHash: string): Promise<AIAnalysisReport[]> {
+    const db = await this.openDB();
+    return new Promise((resolve, reject) => {
+      const req = db
+        .transaction(ANALYSIS_REPORTS_STORE, 'readonly')
+        .objectStore(ANALYSIS_REPORTS_STORE)
+        .index('bookHash')
+        .getAll(bookHash);
+      req.onsuccess = () => {
+        const reports = (req.result as AIAnalysisReport[]).sort(
+          (a, b) => b.updatedAt - a.updatedAt,
+        );
+        for (const report of reports) this.analysisReportCache.set(report.id, report);
+        resolve(reports);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async deleteAnalysisReport(id: string): Promise<void> {
+    const db = await this.openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(ANALYSIS_REPORTS_STORE, 'readwrite');
+      tx.objectStore(ANALYSIS_REPORTS_STORE).delete(id);
+      tx.oncomplete = () => {
+        this.analysisReportCache.delete(id);
+        resolve();
+      };
+      tx.onerror = () => {
+        aiLogger.store.error('deleteAnalysisReport', tx.error?.message || 'TX error');
+        reject(tx.error);
+      };
     });
   }
 }

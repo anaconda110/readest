@@ -79,20 +79,40 @@ export class BookRetriever {
       // Indexed but zero chunks — same shape as empty_index.
       return { passages: [], status: 'empty_index' };
     }
-    if (meta.embeddingModel !== args.activeEmbeddingModel.id) {
+
+    const timeoutMs = args.embeddingTimeoutMs ?? DEFAULT_EMBEDDING_TIMEOUT_MS;
+    // Local embedding models must resolve/download/prepare before their final
+    // id and vector width are known (a failed semantic model can fall back to
+    // TF-IDF). Do this before staleness checks so a fallback index is not
+    // incorrectly compared using its requested engine id.
+    const prepareError = await prepareEmbeddingModelWithTimeout(
+      args.activeEmbeddingModel,
+      timeoutMs,
+    );
+    const activeModelId = args.activeEmbeddingModel.id;
+    if (meta.embeddingModel !== activeModelId) {
       return {
         passages: [],
         status: 'stale_index',
-        reason: `${args.activeEmbeddingModel.id} is selected but this book was indexed with ${meta.embeddingModel}; re-index required`,
+        reason: `${activeModelId} is selected but this book was indexed with ${meta.embeddingModel}; re-index required`,
+      };
+    }
+    if (meta.embeddingDim !== args.activeEmbeddingModel.dim) {
+      return {
+        passages: [],
+        status: 'stale_index',
+        reason: `The index uses ${meta.embeddingDim}-dimension vectors but ${activeModelId} produces ${args.activeEmbeddingModel.dim}; re-index required`,
       };
     }
 
-    const timeoutMs = args.embeddingTimeoutMs ?? DEFAULT_EMBEDDING_TIMEOUT_MS;
-    const { embedding, degraded, reason } = await embedQueryWithTimeout(
-      args.activeEmbeddingModel,
-      args.query,
-      timeoutMs,
-    );
+    const queryResult = prepareError
+      ? {
+          embedding: null,
+          degraded: true,
+          reason: `Embedding model preparation failed: ${prepareError}. Showing text-match results.`,
+        }
+      : await embedQueryWithTimeout(args.activeEmbeddingModel, args.query, timeoutMs);
+    const { embedding, degraded, reason } = queryResult;
 
     const scored = await this.reedy.hybridSearch({
       bookHash: args.bookHash,
@@ -100,7 +120,7 @@ export class BookRetriever {
       // When the embedding times out we fall back to FTS-only by passing a
       // zero vector — vector_distance_cos will produce uniform distances and
       // contribute nothing useful to the RRF; FTS still ranks meaningfully.
-      queryEmbedding: embedding ?? new Array(args.activeEmbeddingModel.dim).fill(0),
+      queryEmbedding: embedding ?? new Array(meta.embeddingDim).fill(0),
       k: args.k,
       sectionIndex: args.sectionIndex,
       spoilerBoundPosition: args.spoilerBoundPosition,
@@ -122,6 +142,24 @@ export class BookRetriever {
       return { passages, status: 'degraded', reason };
     }
     return { passages, status: 'ok' };
+  }
+}
+
+async function prepareEmbeddingModelWithTimeout(
+  model: EmbeddingModel,
+  timeoutMs: number,
+): Promise<string | null> {
+  if (!model.prepare) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    await model.prepare({ signal: controller.signal });
+    return null;
+  } catch (error) {
+    if (controller.signal.aborted) return `timeout after ${timeoutMs}ms`;
+    return error instanceof Error ? error.message : String(error);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

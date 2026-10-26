@@ -5,12 +5,18 @@ import type { EmbeddingModel } from '../models/EmbeddingModel';
 import { chunkSection, type ChunkOptions } from './CfiChunker';
 
 const DEFAULT_BATCH_SIZE = 16;
+export type IndexingProgressPhase =
+  | 'loading-model'
+  | 'preparing'
+  | 'chunking'
+  | 'embedding'
+  | 'indexing';
 
 export interface IndexBookOptions {
   /** Override CfiChunker tuning. Falls back to chunker defaults. */
   chunkOptions?: Partial<ChunkOptions>;
-  /** Optional callback for progress reporting. Phases: 'chunking' | 'embedding'. */
-  onProgress?: (event: { phase: 'chunking' | 'embedding'; current: number; total: number }) => void;
+  /** Optional callback for real model-loading, chunking and embedding progress. */
+  onProgress?: (event: { phase: IndexingProgressPhase; current: number; total: number }) => void;
   /** Optional chapter-title resolver; defaults to `Section ${i + 1}`. */
   getChapterTitle?: (sectionIndex: number) => string | null;
   /** AbortSignal honoured by the embedding model. */
@@ -69,22 +75,42 @@ export class BookIndexer {
     model: EmbeddingModel,
     options: IndexBookOptions,
   ): Promise<void> {
-    await this.reedy.upsertBookMeta({
-      bookHash,
-      indexingStatus: 'indexing',
-      chunkCount: 0,
-      embeddingModel: model.id,
-      embeddingDim: model.dim,
-      indexedAt: null,
-      error: null,
-    });
-    // Re-indexing must replace, not duplicate — drop any prior chunks +
-    // embeddings for this book before writing the new ones. The meta row
-    // upserted above is preserved (clearBookChunks only touches the chunk
-    // and embedding tables).
-    await this.reedy.clearBookChunks(bookHash);
-
     try {
+      options.onProgress?.({ phase: 'preparing', current: 0, total: 1 });
+      await model.prepare?.({
+        signal: options.signal,
+        onProgress: (event) => {
+          options.onProgress?.({
+            phase: event.phase === 'loading-model' ? 'loading-model' : 'preparing',
+            current: event.current,
+            total: event.total,
+          });
+        },
+      });
+      options.onProgress?.({ phase: 'preparing', current: 1, total: 1 });
+      if (options.signal?.aborted) throw new Error('indexing aborted');
+
+      // The local model may switch to the TF-IDF fallback while preparing.
+      // Read identity and dimensions only after preparation so metadata and
+      // the lazy vector table describe the model that actually runs.
+      const embeddingModel = model.id;
+      const embeddingDim = model.dim;
+
+      await this.reedy.upsertBookMeta({
+        bookHash,
+        indexingStatus: 'indexing',
+        chunkCount: 0,
+        embeddingModel,
+        embeddingDim,
+        indexedAt: null,
+        error: null,
+      });
+      // Re-indexing must replace, not duplicate — drop any prior chunks +
+      // embeddings for this book before writing the new ones. The meta row
+      // upserted above is preserved (clearBookChunks only touches the chunk
+      // and embedding tables).
+      await this.reedy.clearBookChunks(bookHash);
+
       const chunks = await this.collectChunks(bookDoc, bookHash, options);
 
       if (chunks.length === 0) {
@@ -96,19 +122,41 @@ export class BookIndexer {
         return;
       }
 
-      await this.reedy.ensureEmbeddingsTable(model.dim);
+      options.onProgress?.({ phase: 'indexing', current: 0, total: 2 });
+      await this.reedy.ensureEmbeddingsTable(embeddingDim);
       await this.reedy.insertChunks(chunks);
 
       await this.embedAndStore(chunks, model, options);
 
+      options.onProgress?.({ phase: 'indexing', current: 1, total: 2 });
       await this.reedy.setIndexingStatus(bookHash, 'indexed', {
         chunkCount: chunks.length,
         indexedAt: Date.now(),
         error: null,
       });
+      options.onProgress?.({ phase: 'indexing', current: 2, total: 2 });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      await this.reedy.setIndexingStatus(bookHash, 'failed', { error: message });
+      try {
+        const existing = await this.reedy.getBookMeta(bookHash);
+        if (existing) {
+          await this.reedy.setIndexingStatus(bookHash, 'failed', { error: message });
+        } else {
+          // Preparation can fail before the normal indexing row is written.
+          // Preserve a useful failed row so the UI does not silently reset.
+          await this.reedy.upsertBookMeta({
+            bookHash,
+            indexingStatus: 'failed',
+            chunkCount: 0,
+            embeddingModel: safeModelId(model),
+            embeddingDim: safeModelDim(model),
+            indexedAt: null,
+            error: message,
+          });
+        }
+      } catch (metaError) {
+        console.warn('[Reedy] failed to persist indexing failure', { bookHash, metaError });
+      }
       throw err;
     }
   }
@@ -177,5 +225,21 @@ export class BookIndexer {
       done += batch.length;
       options.onProgress?.({ phase: 'embedding', current: done, total });
     }
+  }
+}
+
+function safeModelId(model: EmbeddingModel): string {
+  try {
+    return model.id;
+  } catch {
+    return 'unknown-model';
+  }
+}
+
+function safeModelDim(model: EmbeddingModel): number {
+  try {
+    return model.dim;
+  } catch {
+    return 0;
   }
 }

@@ -7,6 +7,18 @@ export type RetrievalBackendKind = 'legacy-idb' | 'reedy';
 
 export type SearchStatus = 'ok' | 'not_indexed' | 'empty_index' | 'stale_index' | 'degraded';
 
+export type BackendIndexStatus = 'not_indexed' | 'indexing' | 'indexed' | 'failed' | 'empty_index';
+
+export interface IndexStats {
+  /** True only when retrieval can use a complete, non-empty index. */
+  indexed: boolean;
+  status: BackendIndexStatus;
+  chunkCount: number;
+  embeddingModel: string;
+  embeddingDim: number;
+  error?: string | null;
+}
+
 export interface SearchBookResult {
   id: string;
   text: string;
@@ -54,6 +66,8 @@ export interface RetrievalBackend {
   readonly kind: RetrievalBackendKind;
 
   isIndexed(bookHash: string): Promise<boolean>;
+  /** Metadata used for size-aware retrieval without opening the full corpus. */
+  getIndexStats?(bookHash: string): Promise<IndexStats | null>;
   indexBook(bookDoc: BookDoc, bookHash: string, options?: BackendIndexOptions): Promise<void>;
   clearBook(bookHash: string): Promise<void>;
 
@@ -99,16 +113,4 @@ export function selectBackend(args: {
     return args.reedy;
   }
   return args.legacy;
-}
-
-/** The active embedding model shown in the AI panel's engine hint. */
-export function getEmbeddingModelName(settings: AISettings): string {
-  switch (settings.provider) {
-    case 'ollama':
-      return settings.ollamaEmbeddingModel || 'nomic-embed-text';
-    case 'ai-gateway':
-      return settings.aiGatewayEmbeddingModel || 'openai/text-embedding-3-small';
-    case 'openrouter':
-      return settings.openrouterEmbeddingModel || 'openai/text-embedding-3-small';
-  }
 }

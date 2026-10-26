@@ -19,5 +19,10 @@ export interface EmbeddingModel {
    * the model's responsibility.
    */
   readonly batchSize?: number;
+  /** Load/probe the model and report real setup progress before metadata is written. */
+  prepare?(opts?: {
+    signal?: AbortSignal;
+    onProgress?: (event: { current: number; total: number; phase?: string }) => void;
+  }): Promise<void>;
   embed(texts: string[], opts?: { signal?: AbortSignal }): Promise<number[][]>;
 }
