@@ -491,6 +491,38 @@ class AIStore {
     });
   }
 
+  async saveAnalysisReportsIfAbsent(reports: AIAnalysisReport[]): Promise<AIAnalysisReport[]> {
+    if (reports.length === 0) return [];
+    const db = await this.openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(ANALYSIS_REPORTS_STORE, 'readwrite');
+      const store = tx.objectStore(ANALYSIS_REPORTS_STORE);
+      const inserted: AIAnalysisReport[] = [];
+      const keysRequest = store.getAllKeys();
+      keysRequest.onsuccess = () => {
+        const existingIds = new Set(keysRequest.result.map(String));
+        for (const report of reports) {
+          if (existingIds.has(report.id)) continue;
+          store.put(report);
+          existingIds.add(report.id);
+          inserted.push(report);
+        }
+      };
+      tx.oncomplete = () => {
+        for (const report of inserted) this.analysisReportCache.set(report.id, report);
+        resolve(inserted);
+      };
+      tx.onerror = () => {
+        aiLogger.store.error('saveAnalysisReportsIfAbsent', tx.error?.message || 'TX error');
+        reject(tx.error);
+      };
+      tx.onabort = () => {
+        aiLogger.store.error('saveAnalysisReportsIfAbsent', tx.error?.message || 'TX aborted');
+        reject(tx.error);
+      };
+    });
+  }
+
   async getAnalysisReport(id: string): Promise<AIAnalysisReport | null> {
     if (this.analysisReportCache.has(id)) return this.analysisReportCache.get(id)!;
     const db = await this.openDB();

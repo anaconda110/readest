@@ -92,6 +92,7 @@ export function AIAnalysisWorkspace({
 }: AIAnalysisWorkspaceProps) {
   const _ = useTranslation();
   const reports = useAIAnalysisStore((state) => state.reports);
+  const loadedBooks = useAIAnalysisStore((state) => state.loadedBooks);
   const loadingBooks = useAIAnalysisStore((state) => state.loadingBooks);
   const loadReports = useAIAnalysisStore((state) => state.loadReports);
   const startAnalysis = useAIAnalysisStore((state) => state.startAnalysis);
@@ -109,8 +110,13 @@ export function AIAnalysisWorkspace({
   );
 
   useEffect(() => {
-    if (bookHash) void loadReports(bookHash);
-  }, [bookHash, loadReports]);
+    if (!bookHash || !bookDoc) return;
+    void loadReports(bookHash, {
+      bookTitle,
+      authorName,
+      toc: bookDoc.toc ?? [],
+    });
+  }, [authorName, bookDoc, bookHash, bookTitle, loadReports]);
 
   useEffect(() => {
     setSelectedReportId(currentReportId);
@@ -119,6 +125,10 @@ export function AIAnalysisWorkspace({
   const currentReport = reports[currentReportId];
   const selectedReport = selectedReportId ? reports[selectedReportId] : undefined;
   const displayedReport = selectedReport ?? currentReport;
+  const aiEnabled = aiSettings?.enabled === true;
+  const reportsReady = loadedBooks[bookHash] === true;
+  const loadingSavedReports =
+    !displayedReport && bookDoc !== null && (loadingBooks[bookHash] === true || !reportsReady);
   const savedReports = useMemo(
     () =>
       Object.values(reports)
@@ -184,11 +194,20 @@ export function AIAnalysisWorkspace({
     setSelectedReportId(currentReportId);
   }, [currentReportId, deleteReport, displayedReport]);
 
-  if (!aiSettings?.enabled) {
+  if (loadingSavedReports) {
+    return (
+      <WorkspaceMessage
+        icon={<Loader2Icon className='size-6 animate-spin' />}
+        title={_('Loading saved analyses...')}
+      />
+    );
+  }
+
+  if (!displayedReport && !aiEnabled) {
     return <AIAnalysisDisabledState onOpenSettings={onOpenSettings} />;
   }
 
-  if (!bookDoc) {
+  if (!displayedReport && !bookDoc) {
     return (
       <WorkspaceMessage
         icon={<BookOpenIcon className='size-7' />}
@@ -200,7 +219,7 @@ export function AIAnalysisWorkspace({
     );
   }
 
-  if (kind === 'chapter' && !bookDoc.sections[sectionIndex]) {
+  if (!displayedReport && kind === 'chapter' && !bookDoc?.sections[sectionIndex]) {
     return (
       <WorkspaceMessage
         icon={<BookOpenIcon className='size-7' />}
@@ -210,7 +229,7 @@ export function AIAnalysisWorkspace({
     );
   }
 
-  if (kind === 'book' && !backend) {
+  if (!displayedReport && kind === 'book' && !backend) {
     return (
       <WorkspaceMessage
         icon={<AlertTriangleIcon className='size-7' />}
@@ -222,7 +241,7 @@ export function AIAnalysisWorkspace({
     );
   }
 
-  if (kind === 'book' && !isIndexed) {
+  if (!displayedReport && kind === 'book' && !isIndexed) {
     if (isLoadingIndex || indexBusy || effectiveIndexError) {
       return (
         <AIAnalysisIndexState
@@ -265,7 +284,7 @@ export function AIAnalysisWorkspace({
           </div>
 
           <div className='flex shrink-0 items-center gap-1'>
-            {isRunning ? (
+            {aiEnabled && isRunning ? (
               <Button
                 size='sm'
                 variant='outline'
@@ -275,7 +294,7 @@ export function AIAnalysisWorkspace({
                 <XIcon className='size-3.5' />
                 {_('Cancel')}
               </Button>
-            ) : (
+            ) : aiEnabled ? (
               <Button
                 size='sm'
                 className='h-8 px-2.5 text-xs'
@@ -289,7 +308,7 @@ export function AIAnalysisWorkspace({
                 )}
                 {generateLabel}
               </Button>
-            )}
+            ) : null}
             {displayedReport && !isRunning && (
               <Button
                 size='icon-sm'
@@ -353,6 +372,7 @@ export function AIAnalysisWorkspace({
             report={displayedReport}
             onRetry={handleGenerate}
             onDelete={handleDelete}
+            canRetry={aiEnabled}
           />
         ) : (
           <AnalysisReportView report={displayedReport} onSourceClick={onSourceClick} />
@@ -404,10 +424,12 @@ function AnalysisFailureState({
   report,
   onRetry,
   onDelete,
+  canRetry,
 }: {
   report: AIAnalysisReport;
   onRetry: () => void;
   onDelete: () => void;
+  canRetry: boolean;
 }) {
   const _ = useTranslation();
   return (
@@ -424,10 +446,12 @@ function AnalysisFailureState({
         </p>
       </div>
       <div className='flex items-center gap-2'>
-        <Button size='sm' variant='outline' className='h-8 text-xs' onClick={onRetry}>
-          <RotateCwIcon className='size-3.5' />
-          {_('Retry')}
-        </Button>
+        {canRetry && (
+          <Button size='sm' variant='outline' className='h-8 text-xs' onClick={onRetry}>
+            <RotateCwIcon className='size-3.5' />
+            {_('Retry')}
+          </Button>
+        )}
         <Button size='sm' variant='ghost' className='h-8 text-xs' onClick={onDelete}>
           <Trash2Icon className='size-3.5' />
           {_('Delete analysis')}

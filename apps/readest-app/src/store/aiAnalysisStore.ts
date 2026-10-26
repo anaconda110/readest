@@ -6,6 +6,10 @@ import {
   getAnalysisReportId,
   type AnalysisRunContext,
 } from '@/services/ai/analysisService';
+import {
+  importAiNovelReaderV2Reports,
+  type AiNovelReaderV2ImportContext,
+} from '@/services/ai/import/aiNovelReaderV2';
 import { aiStore } from '@/services/ai/storage/aiStore';
 import type { AIAnalysisReport } from '@/services/ai/types';
 
@@ -13,7 +17,10 @@ interface AIAnalysisState {
   reports: Record<string, AIAnalysisReport>;
   loadedBooks: Record<string, boolean>;
   loadingBooks: Record<string, boolean>;
-  loadReports: (bookHash: string) => Promise<void>;
+  loadReports: (
+    bookHash: string,
+    importContext?: Omit<AiNovelReaderV2ImportContext, 'bookHash'>,
+  ) => Promise<void>;
   startAnalysis: (context: Omit<AnalysisRunContext, 'signal'>) => string;
   cancelAnalysis: (reportId: string) => void;
   deleteReport: (reportId: string) => Promise<void>;
@@ -45,10 +52,17 @@ export const useAIAnalysisStore = create<AIAnalysisState>((set, get) => ({
   loadedBooks: {},
   loadingBooks: {},
 
-  loadReports: async (bookHash) => {
+  loadReports: async (bookHash, importContext) => {
     if (get().loadedBooks[bookHash] || get().loadingBooks[bookHash]) return;
     set((state) => ({ loadingBooks: { ...state.loadingBooks, [bookHash]: true } }));
     try {
+      if (importContext) {
+        try {
+          await importAiNovelReaderV2Reports({ bookHash, ...importContext });
+        } catch {
+          // A failed one-time import must not hide reports already in storage.
+        }
+      }
       const stored = await aiStore.getAnalysisReports(bookHash);
       const current = get().reports;
       const reports = { ...current };

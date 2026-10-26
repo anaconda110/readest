@@ -5,8 +5,9 @@ import type { AnalysisRunContext } from '@/services/ai/analysisService';
 import { DEFAULT_AI_SETTINGS } from '@/services/ai/constants';
 import type { AIAnalysisReport, AISettings } from '@/services/ai/types';
 
-const { generateAnalysisMock, aiStoreMock } = vi.hoisted(() => ({
+const { generateAnalysisMock, importReportsMock, aiStoreMock } = vi.hoisted(() => ({
   generateAnalysisMock: vi.fn(),
+  importReportsMock: vi.fn(),
   aiStoreMock: {
     saveAnalysisReport: vi.fn(),
     getAnalysisReports: vi.fn(),
@@ -19,6 +20,10 @@ vi.mock('@/services/ai/analysisService', () => ({
   getAnalysisChatModelName: () => 'mock-analysis-model',
   getAnalysisReportId: (bookHash: string, kind: 'chapter' | 'book', sectionIndex?: number) =>
     `${bookHash}:${kind}:${kind === 'chapter' ? (sectionIndex ?? 'unknown') : 'all'}`,
+}));
+
+vi.mock('@/services/ai/import/aiNovelReaderV2', () => ({
+  importAiNovelReaderV2Reports: importReportsMock,
 }));
 
 vi.mock('@/services/ai/storage/aiStore', () => ({ aiStore: aiStoreMock }));
@@ -78,6 +83,8 @@ describe('aiAnalysisStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     generateAnalysisMock.mockReset();
+    importReportsMock.mockReset();
+    importReportsMock.mockResolvedValue(0);
     aiStoreMock.saveAnalysisReport.mockResolvedValue(undefined);
     aiStoreMock.getAnalysisReports.mockResolvedValue([]);
     aiStoreMock.deleteAnalysisReport.mockResolvedValue(undefined);
@@ -123,6 +130,32 @@ describe('aiAnalysisStore', () => {
       expect(useAIAnalysisStore.getState().reports['book-hash:chapter:0']?.status).toBe('complete');
     });
     expect(generateAnalysisMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('imports bundled summaries before loading persisted reports', async () => {
+    const order: string[] = [];
+    const toc = [{ id: 0, label: '第1章', href: 'chapter-1.xhtml', index: 0 }];
+    importReportsMock.mockImplementation(async () => {
+      order.push('import');
+      return 1023;
+    });
+    aiStoreMock.getAnalysisReports.mockImplementation(async () => {
+      order.push('load');
+      return [];
+    });
+    const { useAIAnalysisStore } = await loadStore();
+
+    await useAIAnalysisStore
+      .getState()
+      .loadReports('book-hash', { bookTitle: '灵境行者', authorName: '卖报小郎君', toc });
+
+    expect(importReportsMock).toHaveBeenCalledWith({
+      bookHash: 'book-hash',
+      bookTitle: '灵境行者',
+      authorName: '卖报小郎君',
+      toc,
+    });
+    expect(order).toEqual(['import', 'load']);
   });
 
   test('converts persisted in-flight reports to retryable cancellations on reload', async () => {

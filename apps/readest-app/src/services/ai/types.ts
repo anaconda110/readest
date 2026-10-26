@@ -158,6 +158,10 @@ export interface AIAnalysisReport {
   sources: AIAnalysisSource[];
   /** Explains what evidence the model was allowed to inspect. */
   coverage?: string;
+  /** Marks reports bundled from another reader instead of generated in Readest. */
+  importedFrom?: 'ai-novel-reader-v2';
+  sourceChapterIds?: string[];
+  sourceSummaryIds?: string[];
   createdAt: number;
   updatedAt: number;
 }
