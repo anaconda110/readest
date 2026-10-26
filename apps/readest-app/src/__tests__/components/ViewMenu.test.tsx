@@ -7,6 +7,7 @@ const mockView = {
   book: { dir: undefined as string | undefined },
   renderer: {
     setAttribute: vi.fn(),
+    removeAttribute: vi.fn(),
     setStyles: undefined,
   },
 };
@@ -24,6 +25,7 @@ const mockBookData = {
 const currentViewSettings = {
   scrolled: false,
   scrolledDirection: 'vertical',
+  noContinuousScroll: false,
   webtoonMode: false,
   paragraphMode: { enabled: false },
   zoomLevel: 100,
@@ -224,6 +226,58 @@ describe('ViewMenu right-to-left pages toggle', () => {
       );
       expect(mockView.book.dir).toBe('ltr');
       expect(mockRecreateViewer).toHaveBeenCalledWith(expect.anything(), 'book-1');
+    });
+  });
+});
+
+describe('ViewMenu continuous scroll', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSaveViewSettings.mockResolvedValue(undefined);
+    mockBookData.isFixedLayout = false;
+    mockBookData.bookDoc.rendition = { layout: 'reflowable' };
+    currentViewSettings.scrolled = false;
+    currentViewSettings.scrolledDirection = 'horizontal';
+    currentViewSettings.noContinuousScroll = true;
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('enables vertical full-book scrolling and clears single-section mode', async () => {
+    render(<ViewMenu bookKey='book-1' />);
+
+    fireEvent.click(screen.getByRole('menuitem', { name: /Continuous Scroll/ }));
+
+    await waitFor(() => {
+      expect(mockSaveViewSettings).toHaveBeenCalledWith(
+        expect.anything(),
+        'book-1',
+        'scrolled',
+        true,
+        true,
+        false,
+      );
+      expect(mockSaveViewSettings).toHaveBeenCalledWith(
+        expect.anything(),
+        'book-1',
+        'scrolledDirection',
+        'vertical',
+        true,
+        false,
+      );
+      expect(mockSaveViewSettings).toHaveBeenCalledWith(
+        expect.anything(),
+        'book-1',
+        'noContinuousScroll',
+        false,
+        true,
+        false,
+      );
+      expect(mockView.renderer.setAttribute).toHaveBeenCalledWith('flow', 'scrolled');
+      expect(mockView.renderer.setAttribute).toHaveBeenCalledWith('scroll-direction', 'vertical');
+      expect(mockView.renderer.removeAttribute).toHaveBeenCalledWith('no-continuous-scroll');
     });
   });
 });

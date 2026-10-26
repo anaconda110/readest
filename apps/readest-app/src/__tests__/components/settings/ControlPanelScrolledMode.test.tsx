@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, cleanup, screen, fireEvent } from '@testing-library/react';
+import { render, cleanup, screen, fireEvent, waitFor } from '@testing-library/react';
 
 /**
  * Scrolled mode is supported for fixed-layout books: the view menu's Zoom Mode
@@ -11,6 +11,15 @@ import { render, cleanup, screen, fireEvent } from '@testing-library/react';
  */
 
 let currentIsFixedLayout = false;
+let currentViewSettings: {
+  scrolled: boolean;
+  scrolledDirection: 'vertical' | 'horizontal';
+  noContinuousScroll: boolean;
+} = {
+  scrolled: false,
+  scrolledDirection: 'vertical',
+  noContinuousScroll: false,
+};
 
 vi.mock('@/context/EnvContext', () => ({
   useEnv: () => ({ envConfig: {}, appService: { isMobileApp: false } }),
@@ -33,7 +42,7 @@ vi.mock('@/store/readerStore', () => ({
   useReaderStore: () => ({
     getView: () => stubView,
     getViews: () => [],
-    getViewSettings: () => ({ scrolled: false, noContinuousScroll: false }),
+    getViewSettings: () => currentViewSettings,
     recreateViewer: vi.fn(),
   }),
 }));
@@ -93,14 +102,22 @@ vi.mock('@/app/reader/hooks/useCapturedTurn', () => ({
 import ControlPanel from '@/components/settings/ControlPanel';
 import { saveViewSettings } from '@/helpers/settings';
 
-const scrolledModeSwitch = () =>
-  screen.getByText('Scrolled Mode').closest('label')?.querySelector('input') ??
-  (screen.getByText('Scrolled Mode').closest('div')?.querySelector('input') as HTMLInputElement);
+const continuousScrollSwitch = () =>
+  screen.getByText('Continuous Scroll').closest('label')?.querySelector('input') ??
+  (screen
+    .getByText('Continuous Scroll')
+    .closest('div')
+    ?.querySelector('input') as HTMLInputElement);
 
 afterEach(() => {
   cleanup();
+  vi.clearAllMocks();
   currentIsFixedLayout = false;
-  applyPageTurnAttributes.mockClear();
+  currentViewSettings = {
+    scrolled: false,
+    scrolledDirection: 'vertical',
+    noContinuousScroll: false,
+  };
 });
 
 describe('Settings > Behavior > Scroll', () => {
@@ -128,18 +145,18 @@ describe('Settings > Behavior > Scroll', () => {
     );
   });
 
-  it('offers Scrolled Mode for a fixed-layout book (PDF / CBZ)', () => {
+  it('offers Continuous Scroll for a fixed-layout book (PDF / CBZ)', () => {
     currentIsFixedLayout = true;
     render(<ControlPanel bookKey='test' onRegisterReset={() => {}} />);
 
-    expect(scrolledModeSwitch()?.disabled).toBe(false);
+    expect(continuousScrollSwitch()?.disabled).toBe(false);
   });
 
-  it('offers Scrolled Mode for a reflowable book', () => {
+  it('offers Continuous Scroll for a reflowable book', () => {
     currentIsFixedLayout = false;
     render(<ControlPanel bookKey='test' onRegisterReset={() => {}} />);
 
-    expect(scrolledModeSwitch()?.disabled).toBe(false);
+    expect(continuousScrollSwitch()?.disabled).toBe(false);
   });
 
   // Reflowable scrolled turns snap to whole lines, which overrides any overlap,
@@ -153,6 +170,33 @@ describe('Settings > Behavior > Scroll', () => {
     currentIsFixedLayout = false;
     render(<ControlPanel bookKey='test' onRegisterReset={() => {}} />);
     expect(screen.queryByText('Overlap Pixels')).toBeNull();
+  });
+
+  it('enables vertical full-book scrolling and clears single-section mode', async () => {
+    currentViewSettings = {
+      scrolled: false,
+      scrolledDirection: 'horizontal',
+      noContinuousScroll: true,
+    };
+    render(<ControlPanel bookKey='test' onRegisterReset={() => {}} />);
+
+    fireEvent.click(continuousScrollSwitch()!);
+
+    await waitFor(() => {
+      expect(saveViewSettings).toHaveBeenCalledWith({}, 'test', 'scrolled', true);
+      expect(saveViewSettings).toHaveBeenCalledWith({}, 'test', 'noContinuousScroll', false);
+      expect(saveViewSettings).toHaveBeenCalledWith(
+        {},
+        'test',
+        'scrolledDirection',
+        'vertical',
+        false,
+        false,
+      );
+      expect(stubView.renderer.setAttribute).toHaveBeenCalledWith('flow', 'scrolled');
+      expect(stubView.renderer.setAttribute).toHaveBeenCalledWith('scroll-direction', 'vertical');
+      expect(stubView.renderer.removeAttribute).toHaveBeenCalledWith('no-continuous-scroll');
+    });
   });
 });
 
@@ -169,11 +213,11 @@ describe('Scrolled Mode and the page-turn attributes', () => {
   // interceptor, which recomputes eligibility live rather than reading the
   // attribute, runs a captured turn over the top. Device-reproduced on a
   // Xiaomi 13 — one frame held three page numbers, 59 / 59 / 60.
-  it('re-applies the turn attributes when Scrolled Mode is toggled', () => {
+  it('re-applies the turn attributes when Continuous Scroll is toggled', () => {
     render(<ControlPanel bookKey='test' onRegisterReset={() => {}} />);
     applyPageTurnAttributes.mockClear();
 
-    fireEvent.click(scrolledModeSwitch()!);
+    fireEvent.click(continuousScrollSwitch()!);
 
     expect(applyPageTurnAttributes).toHaveBeenCalled();
   });

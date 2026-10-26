@@ -42,6 +42,7 @@ const ControlPanel: React.FC<SettingsPanelPanelProp> = ({ bookKey, onRegisterRes
   const viewSettings = getViewSettings(bookKey) || settings.globalViewSettings;
 
   const [isScrolledMode, setScrolledMode] = useState(viewSettings.scrolled);
+  const [scrolledDirection, setScrolledDirection] = useState(viewSettings.scrolledDirection);
   const [noContinuousScroll, setNoContinuousScroll] = useState(viewSettings.noContinuousScroll);
   const [scrollingOverlap, setScrollingOverlap] = useState(viewSettings.scrollingOverlap);
   const [hideScrollbar, setHideScrollbar] = useState(viewSettings.hideScrollbar || false);
@@ -133,6 +134,7 @@ const ControlPanel: React.FC<SettingsPanelPanelProp> = ({ bookKey, onRegisterRes
   const handleReset = () => {
     resetToDefaults({
       scrolled: setScrolledMode,
+      scrolledDirection: setScrolledDirection,
       noContinuousScroll: setNoContinuousScroll,
       scrollingOverlap: setScrollingOverlap,
       hideScrollbar: setHideScrollbar,
@@ -205,6 +207,13 @@ const ControlPanel: React.FC<SettingsPanelPanelProp> = ({ bookKey, onRegisterRes
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [noContinuousScroll]);
+
+  useEffect(() => {
+    if (scrolledDirection === viewSettings.scrolledDirection) return;
+    saveViewSettings(envConfig, bookKey, 'scrolledDirection', scrolledDirection, false, false);
+    getView(bookKey)?.renderer.setAttribute('scroll-direction', scrolledDirection);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrolledDirection]);
 
   useEffect(() => {
     saveViewSettings(envConfig, bookKey, 'hideScrollbar', hideScrollbar, false, false);
@@ -466,14 +475,21 @@ const ControlPanel: React.FC<SettingsPanelPanelProp> = ({ bookKey, onRegisterRes
     <div className='my-4 w-full space-y-6'>
       <BoxedList title={_('Scroll')} data-setting-id='settings.control.scrolledMode'>
         <SettingsSwitchRow
-          label={_('Scrolled Mode')}
+          label={_('Continuous Scroll')}
           checked={isScrolledMode}
-          onChange={() => setScrolledMode(!isScrolledMode)}
+          onChange={() => {
+            const enabled = !isScrolledMode;
+            setScrolledMode(enabled);
+            if (enabled) {
+              setNoContinuousScroll(false);
+              setScrolledDirection('vertical');
+            }
+          }}
         />
         <SettingsSwitchRow
           label={_('Single Section Scroll')}
           checked={noContinuousScroll}
-          disabled={!viewSettings.scrolled}
+          disabled={!isScrolledMode}
           onChange={() => setNoContinuousScroll(!noContinuousScroll)}
           data-setting-id='settings.control.scroll.noContinuousScroll'
         />
@@ -482,7 +498,7 @@ const ControlPanel: React.FC<SettingsPanelPanelProp> = ({ bookKey, onRegisterRes
             label={_('Overlap Pixels')}
             value={scrollingOverlap}
             onChange={setScrollingOverlap}
-            disabled={!viewSettings.scrolled}
+            disabled={!isScrolledMode}
             min={0}
             max={200}
             step={10}
@@ -492,7 +508,7 @@ const ControlPanel: React.FC<SettingsPanelPanelProp> = ({ bookKey, onRegisterRes
         <SettingsSwitchRow
           label={_('Hide Scrollbar')}
           checked={hideScrollbar}
-          disabled={!viewSettings.scrolled}
+          disabled={!isScrolledMode}
           onChange={() => setHideScrollbar(!hideScrollbar)}
           data-setting-id='settings.control.scroll.hideScrollbar'
         />

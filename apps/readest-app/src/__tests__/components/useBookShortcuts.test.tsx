@@ -19,6 +19,7 @@ const mockView = {
   renderer: {
     scrolled: false,
     setAttribute: vi.fn(),
+    removeAttribute: vi.fn(),
   },
   history: {
     back: vi.fn(),
@@ -44,6 +45,10 @@ const currentViewSettings = {
   vertical: false,
   rtl: false,
   paragraphMode: { enabled: false },
+  scrolled: false,
+  scrolledDirection: 'vertical' as 'vertical' | 'horizontal',
+  noContinuousScroll: false,
+  webtoonMode: false,
 };
 
 const sideBarState = {
@@ -180,6 +185,10 @@ describe('useBookShortcuts', () => {
     currentViewSettings.vertical = false;
     currentViewSettings.rtl = false;
     currentViewSettings.paragraphMode.enabled = false;
+    currentViewSettings.scrolled = false;
+    currentViewSettings.scrolledDirection = 'vertical';
+    currentViewSettings.noContinuousScroll = false;
+    currentViewSettings.webtoonMode = false;
     currentViewState.inited = true;
     currentBookData.isFixedLayout = false;
     currentViewSettings.defaultFontSize = 16;
@@ -194,6 +203,69 @@ describe('useBookShortcuts', () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  it('enables vertical full-book scrolling with the shortcut', () => {
+    currentViewSettings.scrolledDirection = 'horizontal';
+    currentViewSettings.noContinuousScroll = true;
+    render(<Harness />);
+
+    shortcutState.actions?.['onToggleScrollMode']?.();
+
+    expect(mockSaveViewSettings).toHaveBeenCalledWith(
+      { appPlatform: 'web' },
+      'book-1',
+      'scrolled',
+      true,
+      true,
+      false,
+    );
+    expect(mockSaveViewSettings).toHaveBeenCalledWith(
+      { appPlatform: 'web' },
+      'book-1',
+      'scrolledDirection',
+      'vertical',
+      true,
+      false,
+    );
+    expect(mockSaveViewSettings).toHaveBeenCalledWith(
+      { appPlatform: 'web' },
+      'book-1',
+      'noContinuousScroll',
+      false,
+      true,
+      false,
+    );
+    expect(mockView.renderer.setAttribute).toHaveBeenCalledWith('flow', 'scrolled');
+    expect(mockView.renderer.setAttribute).toHaveBeenCalledWith('scroll-direction', 'vertical');
+    expect(mockView.renderer.removeAttribute).toHaveBeenCalledWith('no-continuous-scroll');
+  });
+
+  it('leaves webtoon mode when disabling continuous scroll with the shortcut', () => {
+    currentViewSettings.scrolled = true;
+    currentViewSettings.webtoonMode = true;
+    render(<Harness />);
+
+    shortcutState.actions?.['onToggleScrollMode']?.();
+
+    expect(mockSaveViewSettings).toHaveBeenCalledWith(
+      { appPlatform: 'web' },
+      'book-1',
+      'scrolled',
+      false,
+      true,
+      false,
+    );
+    expect(mockSaveViewSettings).toHaveBeenCalledWith(
+      { appPlatform: 'web' },
+      'book-1',
+      'webtoonMode',
+      false,
+      true,
+      false,
+    );
+    expect(mockView.renderer.setAttribute).toHaveBeenCalledWith('flow', 'paginated');
+    expect(mockView.renderer.setAttribute).toHaveBeenCalledWith('scroll-gap', '4');
   });
 
   it('routes page-turn shortcuts to reading ruler movement when enabled', () => {

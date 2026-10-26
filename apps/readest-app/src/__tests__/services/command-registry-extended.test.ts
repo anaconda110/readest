@@ -108,6 +108,9 @@ describe('buildCommandRegistry', () => {
     const fontItem = items.find((i) => i.id === 'settings.font.defaultFontSize');
     expect(fontItem).toBeDefined();
     expect(fontItem!.localizedLabel).toBe('translated:Default Font Size');
+
+    const continuousScrollItem = items.find((i) => i.id === 'settings.control.scrolledMode');
+    expect(continuousScrollItem!.localizedLabel).toBe('translated:Continuous Scroll');
   });
 
   it('should set panelLabel using translation function', () => {
