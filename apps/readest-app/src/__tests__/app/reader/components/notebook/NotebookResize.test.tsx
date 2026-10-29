@@ -29,7 +29,11 @@ vi.mock('@/store/bookDataStore', () => ({
 }));
 
 vi.mock('@/store/readerStore', () => ({
-  useReaderStore: () => ({ getViewSettings: () => ({ rtl: false, isEink: false }) }),
+  useReaderStore: () => ({
+    getViewSettings: () => ({ rtl: false, isEink: false }),
+    bookKeys: ['book-1'],
+    setHoveredBookKey: vi.fn(),
+  }),
 }));
 
 vi.mock('@/store/sidebarStore', () => ({
@@ -89,6 +93,17 @@ vi.mock('@/app/reader/hooks/useNotebookDocumentCoordinator', () => ({
 }));
 vi.mock('@/components/Overlay', () => ({ Overlay: () => null }));
 vi.mock('@/hooks/useResponsiveSize', () => ({ useResponsiveSize: (size: number) => size }));
+// HeaderRightTools children are stubbed: these tests are about the notebook
+// panel itself, except for the window-buttons canary asserting which host
+// carries the reader header's right cluster.
+vi.mock('@/app/reader/components/NotebookToggler', () => ({ default: () => null }));
+vi.mock('@/app/reader/components/ViewMenu', () => ({ default: () => null }));
+vi.mock('@/app/reader/components/SyncInfoDialog', () => ({ default: () => null }));
+vi.mock('@/components/Dropdown', () => ({ default: () => null }));
+vi.mock('@/components/ModalPortal', () => ({ default: () => null }));
+vi.mock('@/components/WindowButtons', () => ({
+  default: () => <div data-testid='window-buttons' />,
+}));
 vi.mock('@/app/reader/components/notebook/NotebookEditor', () => ({ default: () => null }));
 vi.mock('@/app/reader/components/notebook/NotebookTabNavigation', () => ({
   default: () => <div data-testid='notebook-tab-navigation' />,
@@ -104,7 +119,7 @@ const NotebookWithHeaderToggle = () => {
   const isNotebookVisible = useNotebookStore((state) => state.isNotebookVisible);
   return (
     <>
-      <Notebook />
+      <Notebook onCloseBook={vi.fn()} />
       {!isNotebookVisible && <NotebookAIToggler bookKey='book-1' />}
     </>
   );
@@ -131,7 +146,7 @@ describe('Notebook resizing', () => {
 
   test('saves and dismisses the mobile notebook when Close is pressed', () => {
     h.isMobile = true;
-    render(<Notebook />);
+    render(<Notebook onCloseBook={vi.fn()} />);
     act(() => useNotebookStore.getState().setNotebookVisible(true));
 
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
@@ -142,7 +157,7 @@ describe('Notebook resizing', () => {
   });
 
   test('keeps an unpinned Notebook open while its width changes', () => {
-    render(<Notebook />);
+    render(<Notebook onCloseBook={vi.fn()} />);
 
     act(() => useNotebookStore.getState().setNotebookVisible(true));
     expect(screen.getByRole('group', { name: 'Notebook' })).toBeTruthy();
@@ -170,7 +185,7 @@ describe('Notebook resizing', () => {
   });
 
   test('hides the duplicate notebook navigation while the AI analysis panel is open', () => {
-    render(<Notebook />);
+    render(<Notebook onCloseBook={vi.fn()} />);
 
     act(() => {
       useNotebookStore.getState().setNotebookVisible(true);
@@ -185,7 +200,7 @@ describe('Notebook resizing', () => {
 
   test('keeps the AI toggle out of the mobile layout', () => {
     h.isMobile = true;
-    render(<Notebook />);
+    render(<Notebook onCloseBook={vi.fn()} />);
 
     act(() => {
       useNotebookStore.getState().setNotebookVisible(true);
@@ -194,6 +209,23 @@ describe('Notebook resizing', () => {
 
     expect(screen.queryByRole('button', { name: 'Expand AI panel' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Collapse AI panel' })).toBeNull();
+  });
+
+  test('hosts the reader header right tools in the panel header on desktop', () => {
+    render(<Notebook onCloseBook={vi.fn()} />);
+
+    act(() => useNotebookStore.getState().setNotebookVisible(true));
+
+    expect(screen.getByTestId('window-buttons')).toBeTruthy();
+  });
+
+  test('keeps the reader header right tools out of the mobile panel', () => {
+    h.isMobile = true;
+    render(<Notebook onCloseBook={vi.fn()} />);
+
+    act(() => useNotebookStore.getState().setNotebookVisible(true));
+
+    expect(screen.queryByTestId('window-buttons')).toBeNull();
   });
 
   test('keeps the AI toggle discoverable when the assistant is disabled', () => {
@@ -207,7 +239,7 @@ describe('Notebook resizing', () => {
   });
 
   test('switches to AI from the panel header while the notes panel is open', () => {
-    render(<Notebook />);
+    render(<Notebook onCloseBook={vi.fn()} />);
 
     act(() => {
       useNotebookStore.getState().setNotebookVisible(true);

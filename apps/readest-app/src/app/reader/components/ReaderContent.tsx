@@ -483,7 +483,7 @@ const ReaderContent: React.FC<{ ids?: string; settings: SystemSettings }> = ({ i
           onClose={() => setPageboundLinkBookKey(null)}
         />
       )}
-      <Notebook />
+      <Notebook onCloseBook={handleCloseBook} />
       <LocalSendManager />
       {showDetailsBook && (
         <BookDetailModal

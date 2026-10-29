@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useSettingsStore } from '@/store/settingsStore';
 import { useBookDataStore } from '@/store/bookDataStore';
@@ -26,14 +26,18 @@ import {
 } from '../../hooks/useNotebookDocumentCoordinator';
 import AIAssistant from './AIAssistant';
 import NotebookHeader from './Header';
-import NotebookAIToggler from './NotebookAIToggler';
+import HeaderRightTools from '../HeaderRightTools';
 import NotebookEditor from './NotebookEditor';
 import NotebookTabNavigation from './NotebookTabNavigation';
 
 const MIN_NOTEBOOK_WIDTH = 0.15;
 const MAX_NOTEBOOK_WIDTH = 0.45;
 
-const Notebook: React.FC = () => {
+interface NotebookProps {
+  onCloseBook: (bookKey: string) => void;
+}
+
+const Notebook: React.FC<NotebookProps> = ({ onCloseBook }) => {
   const _ = useTranslation();
   const { envConfig, appService } = useEnv();
   const { settings } = useSettingsStore();
@@ -62,6 +66,7 @@ const Notebook: React.FC = () => {
   const isMobile =
     appService?.isMobile === true || window.innerWidth < 640 || window.innerHeight < 640;
   const [isFullHeightInMobile, setIsFullHeightInMobile] = useState(isMobile);
+  const notebookHeaderRef = useRef<HTMLDivElement>(null);
 
   const hideNotebook = useCallback(() => {
     if (sideBarBookKey) void flushNotebookDocument(sideBarBookKey);
@@ -263,7 +268,16 @@ const Notebook: React.FC = () => {
             title={notebookActiveTab === 'ai' ? _('AI Analysis') : undefined}
             isPinned={isNotebookPinned}
             isFullScreenMobile={isMobile && isFullHeightInMobile}
-            aiToggle={!isMobile ? <NotebookAIToggler bookKey={sideBarBookKey} /> : undefined}
+            headerRef={notebookHeaderRef}
+            rightTools={
+              !isMobile ? (
+                <HeaderRightTools
+                  bookKey={sideBarBookKey}
+                  headerRef={notebookHeaderRef}
+                  onCloseBook={onCloseBook}
+                />
+              ) : undefined
+            }
             handleClose={hideNotebook}
             handleTogglePin={handleTogglePin}
           />
