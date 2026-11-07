@@ -43,6 +43,32 @@ function fakeBackend(overrides: Partial<RetrievalBackend> = {}): RetrievalBacken
 }
 
 describe('AIAnalysisPanel', () => {
+  it('adds the knowledge tab only when a knowledge workspace is supplied', () => {
+    const { rerender } = render(
+      <AIAnalysisPanel
+        engineName='embed'
+        qaContent={<div>Q&A content</div>}
+        notesContent={<div>Notes content</div>}
+        searchContent={<div>Search content</div>}
+      />,
+    );
+    expect(screen.queryByRole('tab', { name: 'Knowledge' })).toBeNull();
+
+    rerender(
+      <AIAnalysisPanel
+        engineName='embed'
+        qaContent={<div>Q&A content</div>}
+        knowledgeContent={<div>Knowledge content</div>}
+        notesContent={<div>Notes content</div>}
+        searchContent={<div>Search content</div>}
+      />,
+    );
+    const tab = screen.getByRole('tab', { name: 'Knowledge' });
+    expect(tab.getAttribute('aria-controls')).toBe('ai-analysis-panel-knowledge');
+    fireEvent.click(tab);
+    expect(screen.getByText('Knowledge content')).toBeTruthy();
+  });
+
   it('always shows the five tabs and the configured embedding engine', () => {
     render(
       <AIAnalysisPanel

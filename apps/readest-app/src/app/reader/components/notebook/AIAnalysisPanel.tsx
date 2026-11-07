@@ -18,25 +18,27 @@ import type { RetrievalBackend } from '@/services/ai/adapters';
 import { getTopKForChunkCount } from '@/services/ai/rag/topK';
 import type { AISettings, EmbeddingProgress } from '@/services/ai/types';
 
-export type AIAnalysisTab = 'qa' | 'chapter' | 'book' | 'notes' | 'search';
+export type AIAnalysisTab = 'qa' | 'chapter' | 'book' | 'knowledge' | 'notes' | 'search';
 
 interface AIAnalysisPanelProps {
   engineName: string;
   qaContent: ReactNode;
   chapterContent?: ReactNode;
   bookContent?: ReactNode;
+  knowledgeContent?: ReactNode;
   notesContent: ReactNode;
   searchContent: ReactNode;
 }
 
 const panelId = (tab: AIAnalysisTab) => `ai-analysis-panel-${tab}`;
 
-/** Shared five-tab shell used by both the legacy and Reedy agent paths. */
+/** Shared tab shell used by both the legacy and Reedy agent paths. */
 export function AIAnalysisPanel({
   engineName,
   qaContent,
   chapterContent,
   bookContent,
+  knowledgeContent,
   notesContent,
   searchContent,
 }: AIAnalysisPanelProps) {
@@ -52,6 +54,9 @@ export function AIAnalysisPanel({
     { id: 'qa', label: _('Q&A'), controls: 'qa' },
     { id: 'chapter', label: _('Chapter Analysis'), controls: 'chapter' },
     { id: 'book', label: _('Book Analysis'), controls: 'book' },
+    ...(knowledgeContent
+      ? [{ id: 'knowledge' as const, label: _('Knowledge'), controls: 'knowledge' as const }]
+      : []),
     { id: 'notes', label: _('Notes'), controls: 'notes' },
     { id: 'search', label: _('Search'), controls: 'search' },
   ];
@@ -81,7 +86,10 @@ export function AIAnalysisPanel({
       </div>
 
       <div
-        className='border-base-300/70 bg-base-200/45 grid shrink-0 grid-cols-5 gap-0.5 border-b p-1'
+        className={clsx(
+          'border-base-300/70 bg-base-200/45 grid shrink-0 gap-0.5 border-b p-1',
+          tabs.length > 5 ? 'grid-cols-6' : 'grid-cols-5',
+        )}
         role='tablist'
         aria-label={_('AI Analysis')}
       >
@@ -145,6 +153,16 @@ export function AIAnalysisPanel({
           hidden={activeTab !== 'book'}
         >
           {bookContent}
+        </div>
+        <div
+          id={panelId('knowledge')}
+          className='min-h-0 flex-1 flex-col data-[active=true]:flex'
+          role='tabpanel'
+          aria-labelledby='ai-analysis-tab-knowledge'
+          data-active={activeTab === 'knowledge'}
+          hidden={activeTab !== 'knowledge'}
+        >
+          {knowledgeContent}
         </div>
         <div
           id={panelId('notes')}

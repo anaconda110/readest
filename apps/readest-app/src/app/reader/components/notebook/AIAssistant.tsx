@@ -49,6 +49,7 @@ import {
   AIAnalysisSearch,
 } from './AIAnalysisPanel';
 import { AIAnalysisWorkspace } from './AIAnalysisWorkspace';
+import { KnowledgeWorkspace } from './KnowledgeWorkspace';
 
 // Helper function to convert AIMessage array to ExportedMessageRepository format
 // Each message needs to be wrapped with { message, parentId } structure
@@ -109,6 +110,7 @@ const AIAssistantChat = ({
   searchContent,
   chapterContent,
   bookContent,
+  knowledgeContent,
   isLoading,
   isIndexed,
   isIndexing,
@@ -132,6 +134,7 @@ const AIAssistantChat = ({
   searchContent: ReactNode;
   chapterContent: ReactNode;
   bookContent: ReactNode;
+  knowledgeContent: ReactNode;
   isLoading: boolean;
   isIndexed: boolean;
   isIndexing: boolean;
@@ -229,6 +232,7 @@ const AIAssistantChat = ({
       searchContent={searchContent}
       chapterContent={chapterContent}
       bookContent={bookContent}
+      knowledgeContent={knowledgeContent}
       isLoading={isLoading}
       isIndexed={isIndexed}
       isIndexing={isIndexing}
@@ -253,6 +257,7 @@ const AIAssistantWithRuntime = ({
   searchContent,
   chapterContent,
   bookContent,
+  knowledgeContent,
   isLoading,
   isIndexed,
   isIndexing,
@@ -273,6 +278,7 @@ const AIAssistantWithRuntime = ({
   searchContent: ReactNode;
   chapterContent: ReactNode;
   bookContent: ReactNode;
+  knowledgeContent: ReactNode;
   isLoading: boolean;
   isIndexed: boolean;
   isIndexing: boolean;
@@ -314,6 +320,7 @@ const AIAssistantWithRuntime = ({
         }
         chapterContent={chapterContent}
         bookContent={bookContent}
+        knowledgeContent={knowledgeContent}
         notesContent={notesContent}
         searchContent={searchContent}
       />
@@ -609,6 +616,19 @@ const LegacyAIAssistant = ({
       onSourceClick={handleAnalysisSourceClick}
     />
   );
+  const knowledgeContent = (
+    <KnowledgeWorkspace
+      aiSettings={aiSettings}
+      bookDoc={bookData?.bookDoc ?? null}
+      bookHash={bookHash}
+      bookTitle={bookTitle}
+      authorName={authorName}
+      sectionIndex={sectionIndex}
+      chapterTitle={chapterTitle}
+      onSourceClick={handleAnalysisSourceClick}
+      onOpenSettings={handleOpenAISettings}
+    />
+  );
 
   if (!aiSettings?.enabled) {
     return (
@@ -617,6 +637,7 @@ const LegacyAIAssistant = ({
         qaContent={<AIAnalysisDisabledState onOpenSettings={handleOpenAISettings} />}
         chapterContent={chapterContent}
         bookContent={bookContent}
+        knowledgeContent={knowledgeContent}
         notesContent={notesContent}
         searchContent={searchContent}
       />
@@ -638,6 +659,7 @@ const LegacyAIAssistant = ({
         }
         chapterContent={chapterContent}
         bookContent={bookContent}
+        knowledgeContent={knowledgeContent}
         notesContent={notesContent}
         searchContent={searchContent}
       />
@@ -662,6 +684,7 @@ const LegacyAIAssistant = ({
       searchContent={searchContent}
       chapterContent={chapterContent}
       bookContent={bookContent}
+      knowledgeContent={knowledgeContent}
       isLoading={isLoading}
       isIndexed={indexed}
       isIndexing={isIndexing}
@@ -803,6 +826,21 @@ const ReedyAgentAssistantBridge = ({
       }}
     />
   );
+  const knowledgeContent = (
+    <KnowledgeWorkspace
+      aiSettings={aiSettings}
+      bookDoc={bookData.bookDoc}
+      bookHash={bookHash}
+      bookTitle={bookData.book?.title || 'Unknown'}
+      authorName={bookData.book?.author || ''}
+      sectionIndex={readingContext.sectionIndex}
+      chapterTitle={chapterTitle}
+      onSourceClick={(source) => {
+        if (source.cfi) handleNavigate(source.cfi);
+      }}
+      onOpenSettings={handleOpenAISettings}
+    />
+  );
 
   return (
     <AIAnalysisPanel
@@ -822,6 +860,7 @@ const ReedyAgentAssistantBridge = ({
       }
       chapterContent={chapterContent}
       bookContent={bookContent}
+      knowledgeContent={knowledgeContent}
       notesContent={
         <NotebookEditor
           bookKey={bookKey}

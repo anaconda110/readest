@@ -6,19 +6,21 @@ import {
   AIMessage,
   AIAnalysisReport,
 } from '../types';
+import type { ChapterKnowledge } from '../knowledge/types';
 import { aiLogger } from '../logger';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const lunr = require('lunr') as typeof import('lunr');
 
 const DB_NAME = 'readest-ai';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const CHUNKS_STORE = 'chunks';
 const META_STORE = 'bookMeta';
 const BM25_STORE = 'bm25Indices';
 const CONVERSATIONS_STORE = 'conversations';
 const MESSAGES_STORE = 'messages';
 const ANALYSIS_REPORTS_STORE = 'analysisReports';
+const KNOWLEDGE_STORE = 'knowledge';
 
 function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length) return 0;
@@ -106,6 +108,14 @@ class AIStore {
         if (!db.objectStoreNames.contains(ANALYSIS_REPORTS_STORE)) {
           const reportStore = db.createObjectStore(ANALYSIS_REPORTS_STORE, { keyPath: 'id' });
           reportStore.createIndex('bookHash', 'bookHash', { unique: false });
+        }
+
+        // v5: structured per-chapter knowledge for the AI Reader workspace
+        if (!db.objectStoreNames.contains(KNOWLEDGE_STORE)) {
+          const knowledgeStore = db.createObjectStore(KNOWLEDGE_STORE, {
+            keyPath: 'id',
+          });
+          knowledgeStore.createIndex('bookHash', 'bookHash', { unique: false });
         }
       };
     });
@@ -582,6 +592,71 @@ class AIStore {
         aiLogger.store.error('deleteAnalysisReport', tx.error?.message || 'TX error');
         reject(tx.error);
       };
+    });
+  }
+
+  // structured reading knowledge
+
+  async saveChapterKnowledge(knowledge: ChapterKnowledge): Promise<void> {
+    const db = await this.openDB();
+    const record = { ...knowledge, id: `${knowledge.bookHash}:${knowledge.chapterIndex}` };
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(KNOWLEDGE_STORE, 'readwrite');
+      tx.objectStore(KNOWLEDGE_STORE).put(record);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => {
+        aiLogger.store.error('saveChapterKnowledge', tx.error?.message || 'TX error');
+        reject(tx.error);
+      };
+    });
+  }
+
+  async getChapterKnowledge(bookHash: string): Promise<ChapterKnowledge[]> {
+    const db = await this.openDB();
+    return new Promise((resolve, reject) => {
+      const req = db
+        .transaction(KNOWLEDGE_STORE, 'readonly')
+        .objectStore(KNOWLEDGE_STORE)
+        .index('bookHash')
+        .getAll(bookHash);
+      req.onsuccess = () => {
+        const records = (req.result as Array<ChapterKnowledge & { id: string }>).sort(
+          (a, b) => a.chapterIndex - b.chapterIndex,
+        );
+        resolve(records);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async deleteChapterKnowledge(bookHash: string, chapterIndex: number): Promise<void> {
+    const db = await this.openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(KNOWLEDGE_STORE, 'readwrite');
+      tx.objectStore(KNOWLEDGE_STORE).delete(`${bookHash}:${chapterIndex}`);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => {
+        aiLogger.store.error('deleteChapterKnowledge', tx.error?.message || 'TX error');
+        reject(tx.error);
+      };
+    });
+  }
+
+  async clearChapterKnowledge(bookHash: string): Promise<void> {
+    const db = await this.openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(KNOWLEDGE_STORE, 'readwrite');
+      const store = tx.objectStore(KNOWLEDGE_STORE);
+      const request = store.index('bookHash').openKeyCursor(IDBKeyRange.only(bookHash));
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (cursor) {
+          store.delete(cursor.primaryKey);
+          cursor.continue();
+        }
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
     });
   }
 }
