@@ -7,10 +7,10 @@ const ENABLED_KEY = 'readest-localsend-enabled';
 const ALIAS_KEY = 'readest-localsend-alias';
 
 // i18n key for the default alias when the signed-in user's name is known
-// (AirDrop-style "<name>'s Readest"). The `{{name}}` placeholder is filled by
+// (AirDrop-style "<name>'s Moyue"). The `{{name}}` placeholder is filled by
 // the real `_()` in LocalSendManager; `stubTranslation` here only registers
 // the key for extraction (the scanner reads `_('...')` literals).
-export const DEFAULT_ALIAS_NAMED_KEY = _("{{name}}'s Readest");
+export const DEFAULT_ALIAS_NAMED_KEY = _("{{name}}'s Moyue");
 
 /**
  * Whether this device runs the LocalSend service. Defaults to true.

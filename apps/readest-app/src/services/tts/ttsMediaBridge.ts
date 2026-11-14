@@ -172,7 +172,7 @@ export class TTSMediaBridge {
         foregroundServiceTitle: meta.title,
         foregroundServiceText: meta.author,
         // bookKey is `${hash}-${uniqueId()}`; the hash alone addresses the book
-        // for a readest://book/{hash} resume deep link from the car.
+        // for a moyue://book/{hash} resume deep link from the car.
         bookHash: meta.bookKey.split('-')[0],
         bookTitle: meta.title,
         bookAuthor: meta.author,

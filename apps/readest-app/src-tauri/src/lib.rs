@@ -524,7 +524,7 @@ type AppRuntime = tauri_runtime_cef::CefRuntime;
 type AppRuntime = tauri::Wry;
 
 #[cfg(desktop)]
-const SINGLE_INSTANCE_DBUS_ID: &str = "com.bilingify.readest";
+const SINGLE_INSTANCE_DBUS_ID: &str = "app.moyue.reader";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[cfg_attr(
@@ -993,7 +993,7 @@ pub fn run() {
             let win_builder = win_builder
                 .decorations(true)
                 .title_bar_style(TitleBarStyle::Overlay)
-                .title("Readest");
+                .title("Moyue");
 
             #[cfg(all(not(target_os = "macos"), desktop))]
             let win_builder = {
@@ -1001,7 +1001,7 @@ pub fn run() {
                     .decorations(false)
                     .visible(false)
                     .shadow(undecorated_shadow_is_symmetric())
-                    .title("Readest");
+                    .title("Moyue");
 
                 #[cfg(target_os = "windows")]
                 {

@@ -144,4 +144,16 @@ describe('useClipUrlIngress deep-link routing', () => {
       expect.objectContaining({ url: 'https://example.com/some-article' }),
     );
   });
+
+  it.each(['moyue', 'readest'])('accepts the %s://clip custom scheme', async (scheme) => {
+    renderHook(() => useClipUrlIngress());
+    await eventDispatcher.dispatch('app-incoming-url', {
+      urls: [`${scheme}://clip?url=${encodeURIComponent('https://example.com/clipped')}`],
+    });
+    await Promise.resolve();
+    expect(invokeMock).toHaveBeenCalledWith(
+      'clip_url',
+      expect.objectContaining({ url: 'https://example.com/clipped' }),
+    );
+  });
 });

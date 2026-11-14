@@ -373,7 +373,7 @@ class MediaPlaybackService : MediaBrowserServiceCompat() {
 
         // Last book read aloud, persisted across process death so the Android
         // Auto browse tree can offer a "Resume last book" entry when opened cold
-        // (no active session). Hash addresses a readest://book/{hash} resume.
+        // (no active session). Hash addresses a moyue://book/{hash} resume.
         @Volatile
         var lastBookHash: String? = null
         @Volatile
@@ -1071,9 +1071,9 @@ class MediaPlaybackService : MediaBrowserServiceCompat() {
             // audiobook to the player after library hydration. Only ebooks
             // carry the autoplay flag consumed by the reader's TTS bridge.
             val deepLink = if (selectedBook?.isAudiobook == true) {
-                "readest://book/$hash"
+                "moyue://book/$hash"
             } else {
-                "readest://book/$hash?autoplay=tts"
+                "moyue://book/$hash?autoplay=tts"
             }
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(deepLink))
                 .setPackage(packageName)

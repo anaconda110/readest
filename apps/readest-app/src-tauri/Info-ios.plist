@@ -5,7 +5,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>Readest uses the local network to discover nearby devices and transfer books with Nearby BookDrop.</string>
+    <string>Moyue uses the local network to discover nearby devices and transfer books with Nearby BookDrop.</string>
     <key>CFBundleLocalizations</key>
     <array>
       <string>en</string>
@@ -45,21 +45,21 @@
     </array>
     <key>LSSupportsOpeningDocumentsInPlace</key>
     <true/>
-    <!-- Add-only Photos access. Readest never reads the library, but the
+    <!-- Add-only Photos access. Moyue never reads the library, but the
          WebView's "Add to Photos" image callout and the share sheet's
          "Save Image" activity both write through PHPhotoLibrary in-process;
          without this key TCC terminates the app on the first attempt (#5397)
          and iOS hides "Save Image" from the share sheet entirely. -->
     <key>NSPhotoLibraryAddUsageDescription</key>
-    <string>Readest needs access to save images from your books to your photo library.</string>
+    <string>Moyue needs access to save images from your books to your photo library.</string>
     <key>CFBundleURLTypes</key>
     <array>
       <dict>
         <key>CFBundleURLName</key>
-        <string>com.bilingify.readest</string>
+        <string>app.moyue.reader</string>
         <key>CFBundleURLSchemes</key>
         <array>
-          <string>readest</string>
+          <string>moyue</string>
         </array>
       </dict>
       <!-- Google Drive OAuth reverse-DNS redirect (iOS-type client). The
@@ -80,16 +80,16 @@
            tauri.conf.json. -->
       <dict>
         <key>CFBundleURLName</key>
-        <string>com.bilingify.readest.onedrive-oauth</string>
+        <string>app.moyue.reader.onedrive-oauth</string>
         <key>CFBundleURLSchemes</key>
         <array>
-          <string>readest-onedrive</string>
+          <string>moyue-onedrive</string>
         </array>
       </dict>
     </array>
     <key>UIApplicationSceneManifest</key>
     <dict>
-      <!-- Readest creates one main window. Extra scenes requested by Files on
+      <!-- Moyue creates one main window. Extra scenes requested by Files on
            iPad have no WebView and appear black. Keep document handoffs in
            the existing scene; retain the separate CarPlay role below. -->
       <key>UIApplicationSupportsMultipleScenes</key>
@@ -124,12 +124,12 @@
     </dict>
     <key>NSUbiquitousContainers</key>
     <dict>
-      <key>iCloud.com.bilingify.readest</key>
+      <key>iCloud.app.moyue.reader</key>
       <dict>
         <key>NSUbiquitousContainerIsDocumentScopePublic</key>
         <true/>
         <key>NSUbiquitousContainerName</key>
-        <string>Readest</string>
+        <string>Moyue</string>
         <key>NSUbiquitousContainerSupportedFolderLevels</key>
         <string>Any</string>
       </dict>

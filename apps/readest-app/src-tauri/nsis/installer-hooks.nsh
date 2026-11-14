@@ -1,10 +1,11 @@
-; Readest NSIS Installer Hooks
+; Moyue NSIS Installer Hooks
 ; Registers/unregisters the thumbnail and preview handler DLL for Windows Explorer
 
 !include "LogicLib.nsh"
 
-; CLSID for Readest Thumbnail Provider
-!define CLSID_READEST_THUMBNAIL "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
+; CLSID for Moyue Thumbnail Provider (fork-specific: never share this with
+; upstream Readest, or the two installs will overwrite each other's handler)
+!define CLSID_MOYUE_THUMBNAIL "{bf9f7432-90ca-42db-b602-67931b8878da}"
 
 ; IThumbnailProvider Shell Extension Handler GUID
 !define SHELL_THUMBNAIL_HANDLER "{e357fccd-a995-4576-b01f-234630154e96}"
@@ -23,8 +24,8 @@
     Push $0
     ReadRegStr $0 HKCR "${EXT}\ShellEx\${HANDLER}" ""
     ${If} $0 == ""
-    ${OrIf} $0 == "${CLSID_READEST_THUMBNAIL}"
-        WriteRegStr HKCR "${EXT}\ShellEx\${HANDLER}" "" "${CLSID_READEST_THUMBNAIL}"
+    ${OrIf} $0 == "${CLSID_MOYUE_THUMBNAIL}"
+        WriteRegStr HKCR "${EXT}\ShellEx\${HANDLER}" "" "${CLSID_MOYUE_THUMBNAIL}"
     ${EndIf}
     Pop $0
 !macroend
@@ -32,7 +33,7 @@
 !macro UNREGISTER_SHELLEX EXT HANDLER
     Push $0
     ReadRegStr $0 HKCR "${EXT}\ShellEx\${HANDLER}" ""
-    ${If} $0 == "${CLSID_READEST_THUMBNAIL}"
+    ${If} $0 == "${CLSID_MOYUE_THUMBNAIL}"
         DeleteRegKey HKCR "${EXT}\ShellEx\${HANDLER}"
     ${EndIf}
     Pop $0
@@ -52,24 +53,24 @@
 ; NSIS_HOOK_POSTINSTALL - Called after files are installed
 ;------------------------------------------------------------------------------
 !macro NSIS_HOOK_POSTINSTALL
-    DetailPrint "Registering Readest Thumbnail Provider..."
+    DetailPrint "Registering Moyue Thumbnail Provider..."
 
     ; Always do manual registration for reliability
     ; regsvr32 may fail silently if DLL can't find dependencies
 
     ; Register CLSID with full DLL path
-    WriteRegStr HKCR "CLSID\${CLSID_READEST_THUMBNAIL}" "" "Readest Thumbnail Provider"
-    WriteRegStr HKCR "CLSID\${CLSID_READEST_THUMBNAIL}\InprocServer32" "" "$INSTDIR\readest_thumbnail.dll"
-    WriteRegStr HKCR "CLSID\${CLSID_READEST_THUMBNAIL}\InprocServer32" "ThreadingModel" "Apartment"
+    WriteRegStr HKCR "CLSID\${CLSID_MOYUE_THUMBNAIL}" "" "Moyue Thumbnail Provider"
+    WriteRegStr HKCR "CLSID\${CLSID_MOYUE_THUMBNAIL}\InprocServer32" "" "$INSTDIR\moyue_thumbnail.dll"
+    WriteRegStr HKCR "CLSID\${CLSID_MOYUE_THUMBNAIL}\InprocServer32" "ThreadingModel" "Apartment"
 
     ; CRITICAL: Disable process isolation - required because we use IInitializeWithItem, not IInitializeWithStream
     ; Without this, Windows runs the handler in an isolated process that can't load the DLL properly
-    WriteRegDWORD HKCR "CLSID\${CLSID_READEST_THUMBNAIL}" "DisableProcessIsolation" 1
+    WriteRegDWORD HKCR "CLSID\${CLSID_MOYUE_THUMBNAIL}" "DisableProcessIsolation" 1
 
     ; The same class is the preview handler, hosted by prevhost.exe
-    WriteRegStr HKCR "CLSID\${CLSID_READEST_THUMBNAIL}" "AppID" "${APPID_PREVHOST}"
-    WriteRegStr HKCR "CLSID\${CLSID_READEST_THUMBNAIL}" "DisplayName" "Readest Preview Handler"
-    WriteRegStr SHCTX "${PREVIEW_HANDLERS_KEY}" "${CLSID_READEST_THUMBNAIL}" "Readest Preview Handler"
+    WriteRegStr HKCR "CLSID\${CLSID_MOYUE_THUMBNAIL}" "AppID" "${APPID_PREVHOST}"
+    WriteRegStr HKCR "CLSID\${CLSID_MOYUE_THUMBNAIL}" "DisplayName" "Moyue Preview Handler"
+    WriteRegStr SHCTX "${PREVIEW_HANDLERS_KEY}" "${CLSID_MOYUE_THUMBNAIL}" "Moyue Preview Handler"
 
     ; Register the handlers directly on each extension (this is what Windows Shell uses)
     !insertmacro REGISTER_EXT ".epub"
@@ -92,11 +93,11 @@
 ; NSIS_HOOK_PREUNINSTALL - Called before files are removed
 ;------------------------------------------------------------------------------
 !macro NSIS_HOOK_PREUNINSTALL
-    DetailPrint "Unregistering Readest Thumbnail Provider..."
+    DetailPrint "Unregistering Moyue Thumbnail Provider..."
 
     ; Remove CLSID
-    DeleteRegKey HKCR "CLSID\${CLSID_READEST_THUMBNAIL}"
-    DeleteRegValue SHCTX "${PREVIEW_HANDLERS_KEY}" "${CLSID_READEST_THUMBNAIL}"
+    DeleteRegKey HKCR "CLSID\${CLSID_MOYUE_THUMBNAIL}"
+    DeleteRegValue SHCTX "${PREVIEW_HANDLERS_KEY}" "${CLSID_MOYUE_THUMBNAIL}"
 
     ; Remove our ShellEx handlers from extensions
     !insertmacro UNREGISTER_EXT ".epub"
@@ -110,7 +111,7 @@
     !insertmacro UNREGISTER_EXT ".pdf"
 
     ; Delete the DLL file
-    Delete "$INSTDIR\readest_thumbnail.dll"
+    Delete "$INSTDIR\moyue_thumbnail.dll"
 
     ; Refresh shell
     System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'

@@ -118,7 +118,7 @@ This generates a thumbnail with the Readest overlay at the specified size.
 
 ## COM Details
 
-- **CLSID**: `{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}` (one class serves both handlers)
+- **CLSID**: `{BF9F7432-90CA-42DB-B602-67931B8878DA}` (one class serves both handlers)
 - **Shell Thumbnail Handler GUID**: `{e357fccd-a995-4576-b01f-234630154e96}`
 - **Shell Preview Handler GUID**: `{8895b1c6-b41f-4c1c-a562-0d564250836f}`, hosted by `prevhost.exe` (AppID `{6d2b5079-2f0b-48dd-ab7f-97cec514d30b}`)
 - **Threading Model**: Apartment

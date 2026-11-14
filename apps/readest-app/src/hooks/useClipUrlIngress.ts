@@ -55,7 +55,7 @@ async function convertSharedHtml(url: string, htmlFile: string): Promise<Convert
 }
 
 /**
- * Handle "Share to Readest" article URLs from the OS share sheet
+ * Handle "Share to Moyue" article URLs from the OS share sheet
  * (Safari, Chrome, etc.). Two paths feed in:
  *
  *   1. Deep-link wake-up (`app-incoming-url` event published by
@@ -64,7 +64,7 @@ async function convertSharedHtml(url: string, htmlFile: string): Promise<Convert
  *
  *   2. iOS Share-Extension App Group queue — the extension writes
  *      `{url, groupId?, groupName?, htmlFile?}` payloads into the shared
- *      NSUserDefaults at `group.com.bilingify.readest`, and the host
+ *      NSUserDefaults at `group.app.moyue.reader`, and the host
  *      plugin (NativeBridgePlugin) drains them on foreground by calling
  *      `window.__readestOnShareExtensionPending(saves)`. Same ingest
  *      pipeline, but the chosen library group is preserved. When the
@@ -80,7 +80,7 @@ async function convertSharedHtml(url: string, htmlFile: string): Promise<Convert
  * woke the app up before this hook had mounted.
  *
  * Filter rules — only act on URLs that are:
- *   - http(s) (not file://, content://, readest://, blob:, data:)
+ *   - http(s) (not file://, content://, moyue://, blob:, data:)
  *   - NOT an annotation deep link (those go to useOpenLaunchLinks)
  *   - NOT a reader sign-in link (those go to useOpenDeviceLink)
  *
@@ -208,8 +208,10 @@ export function useClipUrlIngress() {
       //   - Universal Link (primary):
       //       https://web.readest.com/clip?url=<encoded>
       //   - Custom URL scheme (fallback):
-      //       readest://clip?url=<encoded>
+      //       moyue://clip?url=<encoded>
       const isClipUrl =
+        url.startsWith('moyue://clip?') ||
+        url.startsWith('moyue://clip/') ||
         url.startsWith('readest://clip?') ||
         url.startsWith('readest://clip/') ||
         /^https:\/\/web\.readest\.com\/clip(?:[/?].*)?$/i.test(url);

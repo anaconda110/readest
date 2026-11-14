@@ -27,7 +27,7 @@ class ClipUrlArgs: Decodable {
   let cancelLabel: String?
 
   // Resolved getters with the same fallbacks the Rust impl uses.
-  var resolvedOverlayTitle: String { overlayTitle ?? "Saving to Readest" }
+  var resolvedOverlayTitle: String { overlayTitle ?? "Saving to Moyue" }
   var resolvedLoadingStatus: String { loadingStatus ?? "Loading article…" }
   var resolvedCapturingStatus: String { capturingStatus ?? "Capturing article…" }
   var resolvedBackground: String { background ?? "#1f2024" }

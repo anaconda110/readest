@@ -54,7 +54,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
       const response = await publicFetch(currentUrl, {
         signal: controller.signal,
-        headers: { 'User-Agent': 'ReadestBot/1.0 (+https://readest.com)' },
+        headers: {
+          'User-Agent': 'MoyueBot/1.0 (+https://github.com/anaconda110/readest)',
+        },
       });
       if (response.status >= 300 && response.status < 400) {
         const location = response.headers.get('location');

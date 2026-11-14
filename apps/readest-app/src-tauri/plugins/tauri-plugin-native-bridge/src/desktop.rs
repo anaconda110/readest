@@ -256,9 +256,8 @@ impl<R: Runtime> NativeBridge<R> {
     //   * Linux → Secret Service (dbus-secret-service-keyring-store)
     //
     // `service` and `user` form the keychain item identity. Service is
-    // the bundle id; user is a stable string ("default") so multiple
-    // Readest installs on the same machine could coexist with distinct
-    // user values if ever needed.
+    // the fork's own namespace; user is a stable string ("default") so
+    // Moyue and a separately installed Readest never share credentials.
 
     pub fn set_sync_passphrase(
         &self,
@@ -572,7 +571,7 @@ impl<R: Runtime> NativeBridge<R> {
     }
 }
 
-const KEYRING_SERVICE: &str = "Readest Safe Storage";
+const KEYRING_SERVICE: &str = "Moyue Safe Storage";
 const KEYRING_USER: &str = "default";
 
 fn keyring_entry() -> std::result::Result<keyring_core::Entry, keyring_core::Error> {

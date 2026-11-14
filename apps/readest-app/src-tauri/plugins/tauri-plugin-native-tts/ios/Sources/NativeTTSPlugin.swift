@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 import WebKit
 import os
 
-private let keepAliveLog = Logger(subsystem: "com.bilingify.readest", category: "TTSKeepAlive")
+private let keepAliveLog = Logger(subsystem: "app.moyue.reader", category: "TTSKeepAlive")
 
 // MARK: - Command arguments (camelCase, decoded from the Rust models)
 
@@ -95,7 +95,7 @@ final class FileWindowLoader: NSObject, AVAssetResourceLoaderDelegate {
   // chunk instead of after everything it asked for.
   private static let chunkSize = 256 * 1024
 
-  let queue = DispatchQueue(label: "com.bilingify.readest.tts.file-window")
+  let queue = DispatchQueue(label: "app.moyue.reader.tts.file-window")
   private let handle: FileHandle
   private let start: UInt64
   private let length: Int64
@@ -1122,7 +1122,7 @@ class NativeTTSPlugin: Plugin, AVSpeechSynthesizerDelegate {
   // Decoding + scanning runs off the main thread (a few ms per sentence, but
   // it would land mid-playback). Serial, so queue order still follows enqueue
   // order even if the caller ever stops awaiting each chunk in turn.
-  private let playoutAnalysisQueue = DispatchQueue(label: "com.bilingify.readest.tts.playout")
+  private let playoutAnalysisQueue = DispatchQueue(label: "app.moyue.reader.tts.playout")
 
   private var playoutSession = 0
   private var playoutQueue: [PlayoutItem] = []

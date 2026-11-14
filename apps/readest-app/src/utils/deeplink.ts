@@ -1,5 +1,9 @@
 import { READEST_WEB_BASE_URL } from '@/services/constants';
 
+export const APP_URL_SCHEME = 'moyue';
+const LEGACY_URL_SCHEME = 'readest';
+const WEB_HOST = 'web.readest.com';
+
 export type AnnotationDeepLink = {
   bookHash: string;
   noteId: string;
@@ -8,14 +12,14 @@ export type AnnotationDeepLink = {
 
 /**
  * Which form of annotation link markdown export embeds: the custom-scheme
- * `readest://` app deeplink or the universal `https://` web link.
+ * `moyue://` app deeplink or the universal `https://` web link.
  */
 export type AnnotationLinkType = 'app' | 'web';
 
 const ANNOTATION_PATH_PREFIX = '/o/book/';
 
 /**
- * Shared readest:// / https://web.readest.com URL parsing: validates the
+ * Shared moyue:// / https://web.readest.com URL parsing: validates the
  * scheme and returns a uniform path-segment list, or null if neither
  * matches. Pass `allowWebHost: false` for links only ever sent natively
  * (widget group taps).
@@ -33,13 +37,13 @@ const parseReadestUrl = (
 
   let segments: string[];
 
-  if (parsed.protocol === 'readest:') {
-    // readest:// URLs park their first path segment in `host`, not pathname.
+  if (parsed.protocol === `${APP_URL_SCHEME}:` || parsed.protocol === `${LEGACY_URL_SCHEME}:`) {
+    // Custom-scheme URLs park their first path segment in `host`, not pathname.
     segments = [parsed.host, ...parsed.pathname.split('/')].filter(Boolean);
   } else if (
     allowWebHost &&
     (parsed.protocol === 'https:' || parsed.protocol === 'http:') &&
-    parsed.host === 'web.readest.com'
+    parsed.host === WEB_HOST
   ) {
     segments = parsed.pathname.split('/').filter(Boolean);
 
@@ -69,7 +73,7 @@ export const buildAnnotationWebUrl = ({ bookHash, noteId, cfi }: AnnotationDeepL
  * and direct deeplink scenarios. Markdown export uses the HTTPS form.
  */
 export const buildAnnotationAppUrl = ({ bookHash, noteId, cfi }: AnnotationDeepLink): string => {
-  const base = `readest://book/${bookHash}/annotation/${noteId}`;
+  const base = `${APP_URL_SCHEME}://book/${bookHash}/annotation/${noteId}`;
   return cfi ? `${base}?cfi=${encodeURIComponent(cfi)}` : base;
 };
 
@@ -83,7 +87,7 @@ export const buildAnnotationUrl = (
 ): string => (linkType === 'app' ? buildAnnotationAppUrl(link) : buildAnnotationWebUrl(link));
 
 /**
- * Parse an incoming readest:// or https://web.readest.com annotation URL.
+ * Parse an incoming moyue:// or https://web.readest.com annotation URL.
  * Accepts the new hierarchical form (book/{hash}/annotation/{id}) and the
  * legacy flat form (annotation/{hash}/{id}) emitted by older Readwise syncs.
  * Returns null if the URL doesn't match.
@@ -110,7 +114,7 @@ export const parseAnnotationDeepLink = (url: string): AnnotationDeepLink | null 
 };
 
 /**
- * Parse an incoming readest:// or https://web.readest.com book-open URL.
+ * Parse an incoming moyue:// or https://web.readest.com book-open URL.
  * Matches only the bare form `book/{hash}` (the widget tap target); the
  * 4-segment annotation form `book/{hash}/annotation/{id}` is handled by
  * parseAnnotationDeepLink and must NOT match here.
@@ -135,7 +139,7 @@ export const parseBookDeepLink = (url: string): { bookHash: string; autoplay?: b
 /**
  * Parse a CrossPoint reader sign-in link: `https://web.readest.com/link?code=…`
  * (from the Readest card on the reader's web Settings page) or
- * `readest://link?code=…` (from the web /link page). The code may be empty.
+ * `moyue://link?code=…` (from the web /link page). The code may be empty.
  */
 export const parseDeviceLinkDeepLink = (url: string): { code: string } | null => {
   let parsed: URL;
@@ -145,17 +149,20 @@ export const parseDeviceLinkDeepLink = (url: string): { code: string } | null =>
     return null;
   }
   const path = parsed.pathname.replace(/\/+$/, '');
-  const isAppLink = parsed.protocol === 'readest:' && parsed.host === 'link' && path === '';
+  const isAppLink =
+    (parsed.protocol === `${APP_URL_SCHEME}:` || parsed.protocol === `${LEGACY_URL_SCHEME}:`) &&
+    parsed.host === 'link' &&
+    path === '';
   const isWebLink =
     (parsed.protocol === 'https:' || parsed.protocol === 'http:') &&
-    parsed.host === 'web.readest.com' &&
+    parsed.host === WEB_HOST &&
     path === '/link';
   if (!isAppLink && !isWebLink) return null;
   return { code: parsed.searchParams.get('code') ?? '' };
 };
 
 /**
- * Parse an incoming `readest://widget-group/{groupBy}/{groupId}` deep link (a
+ * Parse an incoming `moyue://widget-group/{groupBy}/{groupId}` deep link (a
  * "browse groups" tile tap), where `groupId` is the group's Library id.
  */
 export const parseWidgetGroupDeepLink = (
@@ -176,7 +183,7 @@ export const parseWidgetGroupDeepLink = (
 };
 
 /**
- * Parse an incoming `readest://widget-edit-shelf/{shelfId}` deep link (the
+ * Parse an incoming `moyue://widget-edit-shelf/{shelfId}` deep link (the
  * configure dialog's "Edit bookshelf" button), where `shelfId` is the
  * currently-selected shelf's id.
  */

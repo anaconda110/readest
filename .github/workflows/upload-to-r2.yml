@@ -19,6 +19,9 @@ permissions:
 
 jobs:
   upload-to-r2:
+    # This fork publishes to GitHub Releases. R2 needs its own bucket and
+    # download domain before this workflow may run.
+    if: ${{ vars.ENABLE_R2_UPLOAD == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -26,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
     env:
-      RELEASE_R2_BUCKET: readest-releases
+      RELEASE_R2_BUCKET: ${{ vars.MOYUE_R2_BUCKET }}
       RELEASE_R2_ACCOUNT_ID: ${{ secrets.RELEASE_R2_ACCOUNT_ID }}
       RELEASE_R2_ACCESS_KEY_ID: ${{ secrets.RELEASE_R2_ACCESS_KEY_ID }}
       RELEASE_R2_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_R2_SECRET_ACCESS_KEY }}
@@ -34,7 +37,7 @@ jobs:
     steps:
       - name: Download release assets
         run: |
-          gh release download "${{ inputs.tag }}" --repo readest/readest --dir ./release-assets
+          gh release download "${{ inputs.tag }}" --repo ${{ github.repository }} --dir ./release-assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -56,10 +59,16 @@ jobs:
           EOF
 
       - name: Modify latest.json download URLs
+        env:
+          MOYUE_DOWNLOAD_BASE_URL: ${{ vars.MOYUE_DOWNLOAD_BASE_URL }}
         run: |
-          GITHUB_BASE_URL="https://github.com/readest/readest/releases/download"
-          READEST_BASE_URL="https://download.readest.com/releases"
-          sed -i "s#${GITHUB_BASE_URL}#${READEST_BASE_URL}#g" ./release-assets/latest.json
+          if [ -z "${MOYUE_DOWNLOAD_BASE_URL}" ] || [ -z "${RELEASE_R2_BUCKET}" ]; then
+            echo "::error::Set MOYUE_DOWNLOAD_BASE_URL and MOYUE_R2_BUCKET repository variables first."
+            exit 1
+          fi
+          GITHUB_BASE_URL="https://github.com/${{ github.repository }}/releases/download"
+          MOYUE_BASE_URL="${MOYUE_DOWNLOAD_BASE_URL}/releases"
+          sed -i "s#${GITHUB_BASE_URL}#${MOYUE_BASE_URL}#g" ./release-assets/latest.json
 
       - name: Upload to R2
         run: |

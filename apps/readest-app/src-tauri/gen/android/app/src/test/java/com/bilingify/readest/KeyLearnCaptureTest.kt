@@ -1,4 +1,4 @@
-package com.bilingify.readest
+package app.moyue.reader
 
 import android.view.KeyEvent
 import org.junit.Assert.assertFalse

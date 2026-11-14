@@ -38,10 +38,11 @@ const CODE = {
 };
 const KEY = { access_token: 'device-key', token_type: 'bearer', id: 'new-key-id', username: EMAIL };
 
-// Readest releases, as the release job publishes them: latest.json names the
+// This fork's releases, as the release job publishes them: latest.json names the
 // version and each release carries the plugin zip, which holds the readest/
 // folder that goes on the SD card.
-const RELEASES = 'https://download.readest.com/releases';
+const LATEST_JSON = 'https://github.com/anaconda110/readest/releases/latest/download/latest.json';
+const RELEASES = 'https://github.com/anaconda110/readest/releases/download';
 const ZIP_BYTES = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
 const RELEASE_ZIP: Record<string, string | null> = {
   'readest/': null,
@@ -455,7 +456,7 @@ describe('Readest CrossPoint plugin', () => {
     const latest = (version: string) =>
       api.relay.mockImplementation(async (method: string, url: string) => {
         log.push(`${method} ${url}`);
-        return url === `${RELEASES}/latest.json` ? json(200, { version }) : json(404, {});
+        return url === LATEST_JSON ? json(200, { version }) : json(404, {});
       });
     const updateText = () => container.querySelector('[data-update]')?.textContent ?? '';
     const checkForUpdate = async (result: string) => {

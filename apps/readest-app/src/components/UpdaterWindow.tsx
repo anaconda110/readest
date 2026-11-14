@@ -22,6 +22,7 @@ import { getLocale } from '@/utils/misc';
 import { getAndroidPlatformKey, setLastShownReleaseNotesVersion } from '@/helpers/updater';
 import type { ResolvedNightlyUpdate } from '@/helpers/updater';
 import {
+  DOWNLOAD_READEST_URL,
   READEST_UPDATER_FILE,
   READEST_CHANGELOG_FILE,
   READEST_UPDATER_PUBKEY,
@@ -138,7 +139,7 @@ export const UpdaterContent = ({
         const arch = platformKey.replace('android-', '');
         const downloadUrl = data.platforms[platformKey]?.url as string;
         const apkFilePath = await appService.resolveFilePath(
-          `Readest_${data.version}_${arch}.apk`,
+          `Moyue_${data.version}_${arch}.apk`,
           'Cache',
         );
         setUpdate({
@@ -229,7 +230,7 @@ export const UpdaterContent = ({
         const arch = OS_ARCH === 'x86_64' ? 'x64' : 'arm64';
         const downloadUrl = data.platforms[platformKey]?.url as string;
         const execDir = await invoke<string>('get_executable_dir');
-        const exeFileName = `Readest_${data.version}_${arch}-portable.exe`;
+        const exeFileName = `Moyue_${data.version}_${arch}-portable.exe`;
         const exeFilePath = await join(execDir, exeFileName);
         setUpdate({
           currentVersion,
@@ -264,7 +265,7 @@ export const UpdaterContent = ({
           OS_ARCH === 'x86_64' ? 'linux-x86_64-appimage' : 'linux-aarch64-appimage';
         const arch = OS_ARCH === 'x86_64' ? 'x86_64' : 'aarch64';
         const downloadUrl = data.platforms[platformKey]?.url as string;
-        const appImageFileName = `Readest_${data.version}_${arch}.AppImage`;
+        const appImageFileName = `Moyue_${data.version}_${arch}.AppImage`;
         const appImageFilePath = await join(await desktopDir(), appImageFileName);
         setUpdate({
           currentVersion,
@@ -327,7 +328,7 @@ export const UpdaterContent = ({
           return;
         }
         // Windows-portable / Linux-AppImage / Android: download, verify, install.
-        const fileName = n.url.split('/').pop() || `Readest_${n.version}`;
+        const fileName = n.url.split('/').pop() || `Moyue_${n.version}`;
         let filePath: string;
         if (n.platformKey.includes('portable')) {
           // Windows portable: write into the executable dir so the new exe
@@ -604,7 +605,7 @@ export const UpdaterContent = ({
                   <div className='flex gap-2'>
                     {(appService?.isIOSApp || appService?.isMacOSApp) && (
                       <Link
-                        href='https://apps.apple.com/app/id6738622779'
+                        href={DOWNLOAD_READEST_URL}
                         target='_blank'
                         rel='noopener noreferrer'
                         className='btn btn-primary btn-sm'
@@ -615,7 +616,7 @@ export const UpdaterContent = ({
 
                     {appService?.isAndroidApp && (
                       <Link
-                        href='https://play.google.com/store/apps/details?id=com.bilingify.readest'
+                        href={DOWNLOAD_READEST_URL}
                         target='_blank'
                         rel='noopener noreferrer'
                         className='btn btn-primary btn-sm'

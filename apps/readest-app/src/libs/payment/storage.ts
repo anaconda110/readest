@@ -54,7 +54,7 @@ export const shouldGrantGraceCustomization = (
 const graceCustomizationRow = (userId: string) => ({
   user_id: userId,
   provider: 'readest',
-  product_id: 'com.bilingify.readest.customization.grandfathered',
+  product_id: 'app.moyue.reader.customization.grandfathered',
   storage_gb: 0,
   status: 'completed',
   metadata: {

@@ -618,7 +618,7 @@ export interface BookshelfWidgetCatalog {
     showTtsBar: string;
     cancel: string;
     save: string;
-    /** Opens the app to edit the selected shelf (readest://widget-edit-shelf/{id}). */
+    /** Opens the app to edit the selected shelf (moyue://widget-edit-shelf/{id}). */
     edit: string;
     /** Shown on a widget whose shelf hasn't been loaded by the app yet. */
     openApp: string;

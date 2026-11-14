@@ -11,8 +11,8 @@ describe('localSendDeviceModel', () => {
     expect(localSendDeviceModel('linux', false)).toBe('Linux');
   });
 
-  it('falls back to Readest for an unknown platform', () => {
-    expect(localSendDeviceModel('unknown', false)).toBe('Readest');
+  it('falls back to Moyue for an unknown platform', () => {
+    expect(localSendDeviceModel('unknown', false)).toBe('Moyue');
   });
 
   it('only splits iPad out of iOS, never other platforms', () => {

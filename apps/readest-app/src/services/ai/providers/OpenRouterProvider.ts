@@ -49,8 +49,8 @@ export class OpenRouterProvider implements AIProvider {
       // Optional OpenRouter app attribution. Harmless for other OpenAI-
       // compatible backends (they ignore unknown headers).
       headers: {
-        'HTTP-Referer': 'https://readest.com',
-        'X-Title': 'Readest',
+        'HTTP-Referer': 'https://github.com/anaconda110/readest',
+        'X-Title': 'Moyue',
       },
       // Route chat completions / embeddings through our environment-aware
       // fetch so streaming responses bypass the renderer's CORS sandbox

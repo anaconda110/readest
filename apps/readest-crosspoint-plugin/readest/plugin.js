@@ -204,9 +204,10 @@ CrossPoint.registerPlugin(async (container, api) => {
     });
   };
 
-  // Updates come from Readest releases, like the KOReader plugin's: latest.json
-  // names the version, and each release carries the plugin zip.
-  const RELEASES = 'https://download.readest.com/releases';
+  // Updates come from this fork's releases, like the KOReader plugin's:
+  // latest.json names the version, and each release carries the plugin zip.
+  const LATEST_JSON = 'https://github.com/anaconda110/readest/releases/latest/download/latest.json';
+  const RELEASES = 'https://github.com/anaconda110/readest/releases/download';
   // Firmware older than api.dir loads a plugin from /.crosspoint/plugins
   // before the other roots, so an update written there is the one it runs.
   const DIR = api.dir ?? `/.crosspoint/plugins/${api.name}`;
@@ -237,7 +238,7 @@ CrossPoint.registerPlugin(async (container, api) => {
     checkButton.disabled = true;
     updateStatus('Checking for update…');
     try {
-      const res = await api.relay('GET', `${RELEASES}/latest.json`, {}, '');
+      const res = await api.relay('GET', LATEST_JSON, {}, '');
       latest = res.status === 200 ? JSON.parse(res.body).version : '';
       if (!latest) throw new Error(`HTTP ${res.status}`);
       const available = latest.localeCompare(version, 'en', { numeric: true }) > 0;

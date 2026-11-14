@@ -273,7 +273,7 @@ export function BookshelvesEditor({
   useEffect(() => {
     localStorage.setItem('lastBookshelfTab', selectedId);
   }, [selectedId]);
-  // The widget configure dialog's Edit button (readest://widget-edit-shelf/{id})
+  // The widget configure dialog's Edit button (moyue://widget-edit-shelf/{id})
   // lands here as /library?editBookshelf={id}&t=.... `t` is a per-tap nonce (see
   // useOpenLaunchLinks) that's always a real dependency change, so a repeat tap -
   // even for the same shelf, or one that arrives while this editor is already
@@ -963,7 +963,7 @@ export default function BookshelvesDialog() {
     eventDispatcher.on('show-bookshelves', show);
     return () => eventDispatcher.off('show-bookshelves', show);
   }, []);
-  // The widget configure dialog's Edit button (readest://widget-edit-shelf/{id})
+  // The widget configure dialog's Edit button (moyue://widget-edit-shelf/{id})
   // lands here as /library?editBookshelf={id}&t=.... BookshelvesEditor selects the
   // shelf itself (it owns selectedId); this just needs to open the dialog -
   // including reopening it for a repeat tap on the same shelf, which `t` (a

@@ -41,7 +41,7 @@ pub fn setup_macos_menu(app: &AppHandle) -> tauri::Result<()> {
             .text("privacy_policy", "Privacy Policy")
             .separator()
             .text("report_issue", "Report An Issue...")
-            .text("readest_help", "Readest Help")
+            .text("moyue_help", "Moyue Help")
             .build()?,
     )?;
 
@@ -57,11 +57,11 @@ pub fn handle_menu_event(app: &AppHandle, event: &MenuEvent) {
     if event.id() == "open_file" {
         handle_open_file(app);
     } else if event.id() == "privacy_policy" {
-        let _ = opener.open_url("https://readest.com/privacy-policy", None::<&str>);
+        let _ = opener.open_url("https://github.com/anaconda110/readest#readme", None::<&str>);
     } else if event.id() == "report_issue" {
-        let _ = opener.open_url("https://github.com/readest/readest/issues", None::<&str>);
-    } else if event.id() == "readest_help" {
-        let _ = opener.open_url("https://readest.com/support", None::<&str>);
+        let _ = opener.open_url("https://github.com/anaconda110/readest/issues", None::<&str>);
+    } else if event.id() == "moyue_help" {
+        let _ = opener.open_url("https://github.com/anaconda110/readest#readme", None::<&str>);
     }
 }
 

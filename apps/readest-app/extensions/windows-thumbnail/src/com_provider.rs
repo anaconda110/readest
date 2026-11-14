@@ -7,7 +7,7 @@
 /// **Important**: Thumbnails and previews are only shown when Readest.exe is the default
 /// application for the file type.
 ///
-/// ## CLSID: {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
+/// ## CLSID: {BF9F7432-90CA-42DB-B602-67931B8878DA}
 use std::cell::UnsafeCell;
 use std::ffi::c_void;
 use std::path::PathBuf;
@@ -48,11 +48,11 @@ use super::cached_thumbnail_for_path;
 use crate::preview::{create_preview_window, destroy_preview_window};
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CLSID for Readest Thumbnail Provider
+// CLSID for Moyue Thumbnail Provider
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// CLSID: {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
-pub const CLSID_READEST_THUMBNAIL: GUID = GUID::from_u128(0xA1B2C3D4_E5F6_7890_ABCD_EF1234567890);
+/// CLSID: {BF9F7432-90CA-42DB-B602-67931B8878DA}
+pub const CLSID_MOYUE_THUMBNAIL: GUID = GUID::from_u128(0xBF9F7432_90CA_42DB_B602_67931B8878DA);
 
 /// Supported file extensions
 pub const SUPPORTED_EXTENSIONS: &[&str] = &[
@@ -493,7 +493,7 @@ pub unsafe extern "system" fn DllGetClassObject(
     }
     *ppv = std::ptr::null_mut();
 
-    if *rclsid != CLSID_READEST_THUMBNAIL {
+    if *rclsid != CLSID_MOYUE_THUMBNAIL {
         return E_NOINTERFACE;
     }
     if *riid != IClassFactory::IID && *riid != IUnknown::IID {
@@ -538,17 +538,17 @@ fn get_dll_path() -> Option<String> {
 fn clsid_string() -> String {
     format!(
         "{{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
-        CLSID_READEST_THUMBNAIL.data1,
-        CLSID_READEST_THUMBNAIL.data2,
-        CLSID_READEST_THUMBNAIL.data3,
-        CLSID_READEST_THUMBNAIL.data4[0],
-        CLSID_READEST_THUMBNAIL.data4[1],
-        CLSID_READEST_THUMBNAIL.data4[2],
-        CLSID_READEST_THUMBNAIL.data4[3],
-        CLSID_READEST_THUMBNAIL.data4[4],
-        CLSID_READEST_THUMBNAIL.data4[5],
-        CLSID_READEST_THUMBNAIL.data4[6],
-        CLSID_READEST_THUMBNAIL.data4[7]
+        CLSID_MOYUE_THUMBNAIL.data1,
+        CLSID_MOYUE_THUMBNAIL.data2,
+        CLSID_MOYUE_THUMBNAIL.data3,
+        CLSID_MOYUE_THUMBNAIL.data4[0],
+        CLSID_MOYUE_THUMBNAIL.data4[1],
+        CLSID_MOYUE_THUMBNAIL.data4[2],
+        CLSID_MOYUE_THUMBNAIL.data4[3],
+        CLSID_MOYUE_THUMBNAIL.data4[4],
+        CLSID_MOYUE_THUMBNAIL.data4[5],
+        CLSID_MOYUE_THUMBNAIL.data4[6],
+        CLSID_MOYUE_THUMBNAIL.data4[7]
     )
 }
 
@@ -594,7 +594,7 @@ unsafe fn register_server_impl() -> Result<(), HRESULT> {
 
     // CLSID key
     let clsid_key = create_reg_key(HKEY_CLASSES_ROOT, &format!("CLSID\\{}", clsid))?;
-    set_reg_value(clsid_key, "", "Readest Thumbnail Provider")?;
+    set_reg_value(clsid_key, "", "Moyue Thumbnail Provider")?;
     set_reg_value(clsid_key, "AppID", APPID_PREVHOST)?;
     set_reg_value(clsid_key, "DisplayName", "Readest Preview Handler")?;
 
@@ -696,11 +696,11 @@ mod tests {
 
     #[test]
     fn claims_only_free_or_own_slots() {
-        let ours = "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}";
+        let ours = "{BF9F7432-90CA-42DB-B602-67931B8878DA}";
         assert!(may_claim_slot(None, ours));
         assert!(may_claim_slot(Some(""), ours));
         assert!(may_claim_slot(
-            Some("{a1b2c3d4-e5f6-7890-abcd-ef1234567890}"),
+            Some("{bf9f7432-90ca-42db-b602-67931b8878da}"),
             ours
         ));
         // Edge's PDF previewer

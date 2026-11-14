@@ -36,7 +36,7 @@ import {
  * container keeps working locally and the OS resumes replication on sign-in.
  */
 
-const TMP_PREFIX = '.readest-tmp-';
+const TMP_PREFIX = '.moyue-tmp-';
 const PLACEHOLDER_SUFFIX = '.icloud';
 /** Book downloads can be slow on first access; library.json is instant. */
 const DOWNLOAD_TIMEOUT_MS = 120_000;

@@ -120,7 +120,7 @@ const LocalSendManager: React.FC = () => {
   }, [appService]);
 
   const defaultAlias = useCallback(async (): Promise<string> => {
-    // Prefer the signed-in user's name, AirDrop style: "<name>'s Readest".
+    // Prefer the signed-in user's name, AirDrop style: "<name>'s Moyue".
     // Match the library main menu ("Logged in as {{name}}"): first name only.
     const fullName: unknown = userRef.current?.user_metadata?.['full_name'];
     if (typeof fullName === 'string' && fullName.trim()) {
@@ -134,7 +134,7 @@ const LocalSendManager: React.FC = () => {
     } catch {
       /* fall through to the generic default */
     }
-    return 'Readest';
+    return 'Moyue';
   }, []);
 
   // Service lifecycle: match the running state to the per-device preference.
@@ -171,7 +171,7 @@ const LocalSendManager: React.FC = () => {
   }, [syncServiceState]);
 
   // AirDrop-style presence: this device is discoverable only while its screen
-  // is on and Readest is in the foreground. Locking the screen or backgrounding
+  // is on and Moyue is in the foreground. Locking the screen or backgrounding
   // the app fires `visibilitychange` -> hidden (on both mobile and desktop),
   // so we stop answering announcements and peers drop us from their pickers
   // within a few seconds; returning to the foreground re-announces us at once.
@@ -299,7 +299,7 @@ const LocalSendManager: React.FC = () => {
           try {
             const raw = await appService.readFile(payload.path, 'None', 'binary');
             const pack = typeof raw === 'string' ? null : await extractCollectionPack(raw);
-            if (!pack) throw new Error('Not a readable Readest pack');
+            if (!pack) throw new Error('Not a readable Moyue pack');
             const { getGroupId, getGroupName, updateBooks } = useLibraryStore.getState();
             const importedBooks: Book[] = [];
             for (const { file: innerFile, groupName: packGroupName } of pack.books) {

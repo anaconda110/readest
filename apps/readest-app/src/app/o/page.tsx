@@ -25,13 +25,13 @@ const detectPlatform = (): Platform => {
   return 'desktop';
 };
 
-const ANDROID_PACKAGE = 'com.bilingify.readest';
+const ANDROID_PACKAGE = 'app.moyue.reader';
 const FALLBACK_TIMEOUT_MS = 1500;
 const DESKTOP_FALLBACK_DELAY_MS = 1000;
 
 const buildIntentUrl = (path: string, fallbackUrl: string) => {
   const cleanPath = path.replace(/^\//, '');
-  return `intent://${cleanPath}#Intent;scheme=readest;package=${ANDROID_PACKAGE};S.browser_fallback_url=${encodeURIComponent(fallbackUrl)};end`;
+  return `intent://${cleanPath}#Intent;scheme=moyue;package=${ANDROID_PACKAGE};S.browser_fallback_url=${encodeURIComponent(fallbackUrl)};end`;
 };
 
 const buildWebReaderUrl = (bookHash: string, cfi: string | null): string => {
@@ -129,8 +129,12 @@ const OpenAnnotationLanding = () => {
                 'The annotation link is missing required information. The original link may have been truncated.',
               )}
             </p>
-            <a href='https://readest.com' className='btn btn-ghost btn-block mt-6' rel='noopener'>
-              {_('Go to Readest')}
+            <a
+              href='https://github.com/anaconda110/readest'
+              className='btn btn-ghost btn-block mt-6'
+              rel='noopener'
+            >
+              {_('Go to Moyue')}
             </a>
           </div>
         </Card>

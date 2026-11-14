@@ -25,7 +25,7 @@ vi.mock('@/hooks/useQuotaStats', () => ({
   useQuotaStats: () => ({ userProfilePlan: 'free', customizationPurchased: false }),
 }));
 vi.mock('@/services/localsend/devicePrefs', () => ({
-  DEFAULT_ALIAS_NAMED_KEY: "{{name}}'s Readest",
+  DEFAULT_ALIAS_NAMED_KEY: "{{name}}'s Moyue",
   getLocalSendAlias: () => 'Test Device',
   isLocalSendEnabled: () => true,
 }));

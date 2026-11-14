@@ -4,7 +4,13 @@ use serde::Deserialize;
 use std::sync::{Arc, Mutex};
 use tauri::State;
 
-const DISCORD_APP_ID: &str = "1462683110612144348";
+// Upstream Readest's Discord application id is intentionally NOT reused.
+// Set MOYUE_DISCORD_APP_ID at build time after registering this fork's own
+// Discord application; otherwise rich presence is disabled.
+const DISCORD_APP_ID: &str = match option_env!("MOYUE_DISCORD_APP_ID") {
+    Some(id) => id,
+    None => "",
+};
 const MAX_TITLE_LENGTH: usize = 128;
 const MAX_AUTHOR_LENGTH: usize = 128;
 
@@ -25,6 +31,9 @@ impl DiscordRpcClient {
     fn ensure_connected(&mut self) -> Result<(), String> {
         if self.client.is_some() {
             return Ok(());
+        }
+        if DISCORD_APP_ID.is_empty() {
+            return Err("Discord rich presence is not configured for this build".to_string());
         }
 
         let mut client = DiscordIpcClient::new(DISCORD_APP_ID);
@@ -119,7 +128,10 @@ pub async fn update_book_presence(
 
     activity_builder = activity_builder.assets(assets_builder);
 
-    let button = activity::Button::new("Read on Readest", "https://web.readest.com");
+    let button = activity::Button::new(
+        "Read on Moyue",
+        "https://github.com/anaconda110/readest",
+    );
     activity_builder = activity_builder.buttons(vec![button]);
 
     if let Some(ref mut discord_client) = client.client {

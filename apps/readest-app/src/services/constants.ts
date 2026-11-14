@@ -48,6 +48,8 @@ import { DEFAULT_ANNOTATION_TOOLBAR_ITEMS } from '@/utils/annotationToolbar';
 import { DEFAULT_SENTENCE_GAP_SEC } from './tts/EdgeTTSClient';
 import { DEFAULT_PARAGRAPH_GAP_SEC } from './tts/TTSController';
 
+// Keep the historical data subdirectory so an existing library can be copied
+// into the new bundle-id root without rewriting paths.
 export const DATA_SUBDIR = 'Readest';
 export const LOCAL_BOOKS_SUBDIR = `${DATA_SUBDIR}/Books`;
 export const CLOUD_BOOKS_SUBDIR = `${DATA_SUBDIR}/Books`;
@@ -959,7 +961,7 @@ export const CJK_FONTS_PATTENS = new RegExp(
 
 export const BOOK_IDS_SEPARATOR = '+';
 
-export const DOWNLOAD_READEST_URL = 'https://readest.com?utm_source=readest_web';
+export const DOWNLOAD_READEST_URL = 'https://github.com/anaconda110/readest/releases/latest';
 
 export const READEST_WEB_BASE_URL = 'https://web.readest.com';
 export const READEST_NODE_BASE_URL = 'https://node.readest.com';
@@ -985,26 +987,34 @@ export const SHARE_TOKEN_LENGTH = 22;
 export const SHARE_PRESIGN_TTL_SECONDS = 300;
 export const SHARE_CFI_MAX_LENGTH = 512;
 
-const LATEST_DOWNLOAD_BASE_URL = 'https://download.readest.com/releases';
+// This fork publishes stable updates to its own GitHub Releases. The release
+// workflow uploads `latest.json` and `release-notes.json` alongside the signed
+// installers, so no upstream Readest infrastructure is involved.
+const LATEST_DOWNLOAD_BASE_URL = 'https://github.com/anaconda110/readest/releases/latest/download';
+const NIGHTLY_DOWNLOAD_BASE_URL =
+  'https://github.com/anaconda110/readest/releases/download/nightly';
 
 export const READEST_UPDATER_FILE = `${LATEST_DOWNLOAD_BASE_URL}/latest.json`;
 
 export const READEST_CHANGELOG_FILE = `${LATEST_DOWNLOAD_BASE_URL}/release-notes.json`;
 
-export const READEST_NIGHTLY_UPDATER_FILE = 'https://download.readest.com/nightly/latest.json';
+// Nightly builds are not published by this fork yet. Keeping the future URL
+// here means the nightly channel cleanly falls back to the stable manifest
+// (`resolveNightlyUpdate` checks both) instead of reaching upstream.
+export const READEST_NIGHTLY_UPDATER_FILE = `${NIGHTLY_DOWNLOAD_BASE_URL}/latest.json`;
 
 // Public (verification) key, identical to src-tauri/tauri.conf.json `updater.pubkey`.
 // Used to verify nightly artifacts in the custom install flows (portable /
 // AppImage / Android). Safe to embed — it is a public key.
 export const READEST_UPDATER_PUBKEY =
-  'dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJFMEQ1QjE2OEU1NEIzNTEKUldSUnMxU09GbHNOdmpEaWFMT1crRFpEV2VORzQ2MklxaFc0M1R0ci9xY2c1bENXS0xhM1R1L2sK';
+  'dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZGNEQ3NEJCRDM2RkY5RDEKUldUUitXL1R1M1JOYjV2aUM0TTZVNHhpRnpubU9DOHBiV2pWa0J2a3p1Y3lmL0Y1TVF4SGgyMmoK';
 
 export const READEST_PUBLIC_STORAGE_BASE_URL = 'https://storage.readest.com';
 // Custom domain serving the readest-public bucket; durable media assets
 // (e.g. published book covers) are linked through this host.
 export const READEST_PUBLIC_ASSETS_BASE_URL = 'https://assets.readest.com';
 
-export const READEST_OPDS_USER_AGENT = 'Readest/1.0 (OPDS Browser)';
+export const READEST_OPDS_USER_AGENT = 'Moyue/1.0 (OPDS Browser)';
 
 export const SYNC_PROGRESS_INTERVAL_SEC = 3;
 export const SYNC_NOTES_INTERVAL_SEC = 5;

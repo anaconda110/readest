@@ -1,4 +1,4 @@
-package com.bilingify.readest
+package app.moyue.reader
 
 import android.os.Build
 import android.os.Bundle
@@ -132,7 +132,7 @@ class MainActivity : TauriActivity(), KeyDownInterceptor {
 
     // #5427: Chromium presents the system text-selection toolbar
     // (Copy / Share / Select all) through paths that never fire a cancelable
-    // contextmenu event, so it can cover Readest's own annotation toolbar.
+    // contextmenu event, so it can cover Moyue's own annotation toolbar.
     // While the JS side keeps the flag set (reader text is selected), hand
     // the framework a no-op ActionMode so the floating toolbar is never
     // built; selection and drag handles are unaffected.

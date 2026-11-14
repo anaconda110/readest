@@ -8,7 +8,7 @@ import { getFileExtension } from '@/utils/path';
 import { configureZip } from '@/utils/zip';
 
 export const READEST_PACK_EXT = 'rbooks';
-export const READEST_PACK_MIME = 'application/x-readest-books';
+export const READEST_PACK_MIME = 'application/x-moyue-books';
 export const MANIFEST_FILENAME = 'readest-manifest.json';
 
 export const MAX_PACK_ENTRIES = 5_000;

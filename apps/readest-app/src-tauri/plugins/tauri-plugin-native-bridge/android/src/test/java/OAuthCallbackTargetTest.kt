@@ -50,11 +50,11 @@ class OAuthCallbackTargetTest {
 
     @Test
     fun supabaseCallback_requiresItsRegisteredHost() {
-        val target = OAuthCallbackTarget.parse("readest://auth-callback")
+        val target = OAuthCallbackTarget.parse("moyue://auth-callback")
 
         assertNotNull(target)
-        assertTrue(target!!.matches("readest://auth-callback#access_token=TOKEN"))
-        assertFalse(target.matches("readest://other#access_token=TOKEN"))
+        assertTrue(target!!.matches("moyue://auth-callback#access_token=TOKEN"))
+        assertFalse(target.matches("moyue://other#access_token=TOKEN"))
     }
 
     @Test

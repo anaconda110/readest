@@ -724,7 +724,7 @@ class NativeBridgePlugin(private val activity: Activity): Plugin(activity) {
                     }
                     val displayName = args.fileName ?: srcFile.name
                     val mimeType = args.mimeType ?: "image/*"
-                    val album = args.albumName ?: "Readest"
+                    val album = args.albumName ?: "Moyue"
                     val resolver = activity.contentResolver
 
                     val values = ContentValues().apply {

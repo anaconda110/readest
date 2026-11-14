@@ -18,7 +18,7 @@
 //
 //   1. App Group queue + responder-chain launch.
 //      `AppGroupBridge.appendPendingSave` writes the URL + chosen group
-//      to the shared NSUserDefaults at `group.com.bilingify.readest`.
+//      to the shared NSUserDefaults at `group.app.moyue.reader`.
 //      We then walk the UIResponder chain looking for an object that
 //      responds to `openURL:options:completionHandler:` (UIApplication)
 //      and dispatch via an objc-runtime IMP cast. This is the pattern
@@ -186,9 +186,9 @@ final class ShareViewController: UIViewController {
         title: Self.textTitle(text)
       ))
     NSLog("[ReadestShare] queued text save %@ group=%@", textFile, group?.name ?? "<none>")
-    // `readest://clip/` carries no URL: it only wakes the app, which then
+    // `moyue://clip/` carries no URL: it only wakes the app, which then
     // drains the queue.
-    if let target = URL(string: "readest://clip/") {
+    if let target = URL(string: "moyue://clip/") {
       openViaResponderChain(target)
     }
     completeOnce()

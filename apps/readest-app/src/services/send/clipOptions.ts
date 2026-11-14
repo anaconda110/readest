@@ -1,7 +1,7 @@
 /**
  * Options handed to the Rust `clip_url` command so the in-webview
  * loading overlay, window title, "Saved" page, and native window
- * background all match Readest's current theme + UI language.
+ * background all match the current app theme + UI language.
  *
  * Each `_()` call is a literal string so the i18next scanner can
  * extract the keys — keep them inline here rather than building from
@@ -35,11 +35,11 @@ export interface ClipOptions {
 export function getClipOptions(_: Translate): ClipOptions {
   const { bg, fg } = getThemeCode();
   return {
-    windowTitle: _('Saving to your Readest library…'),
-    overlayTitle: _('Saving to Readest'),
+    windowTitle: _('Saving to your Moyue library…'),
+    overlayTitle: _('Saving to Moyue'),
     loadingStatus: _('Loading article…'),
     capturingStatus: _('Capturing article…'),
-    savedTitle: _('Saved to Readest'),
+    savedTitle: _('Saved to Moyue'),
     background: bg,
     foreground: fg,
     signInHint: _('Sign in if needed, then capture'),

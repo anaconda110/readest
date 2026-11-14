@@ -151,10 +151,10 @@ describe('UpdaterContent — auto-translated changelog', () => {
   const SPLIT_MANIFEST = {
     version: '0.11.20',
     platforms: {
-      'android-arm64': { url: 'https://example.com/Readest_0.11.20_arm64.apk' },
-      'android-armv7': { url: 'https://example.com/Readest_0.11.20_armv7.apk' },
-      'android-legacy': { url: 'https://example.com/Readest_0.11.20_legacy.apk' },
-      'android-universal': { url: 'https://example.com/Readest_0.11.20_armv7.apk' },
+      'android-arm64': { url: 'https://example.com/Moyue_0.11.20_arm64.apk' },
+      'android-armv7': { url: 'https://example.com/Moyue_0.11.20_armv7.apk' },
+      'android-legacy': { url: 'https://example.com/Moyue_0.11.20_legacy.apk' },
+      'android-universal': { url: 'https://example.com/Moyue_0.11.20_armv7.apk' },
     },
   };
 
@@ -178,8 +178,8 @@ describe('UpdaterContent — auto-translated changelog', () => {
 
     await waitFor(() => expect(tauriDownload).toHaveBeenCalledOnce());
     expect(vi.mocked(tauriDownload).mock.calls[0]!.slice(0, 2)).toEqual([
-      `https://example.com/Readest_0.11.20_${abi}.apk`,
-      `/cache/Readest_0.11.20_${abi}.apk`,
+      `https://example.com/Moyue_0.11.20_${abi}.apk`,
+      `/cache/Moyue_0.11.20_${abi}.apk`,
     ]);
   });
 
@@ -195,7 +195,7 @@ describe('UpdaterContent — auto-translated changelog', () => {
           endpoint: 'https://example.com/nightly.json',
           version: '0.11.20',
           platformKey: 'windows-x86_64',
-          url: 'https://example.com/readest.exe',
+          url: 'https://example.com/moyue.exe',
           signature: 'signature',
         }}
       />,

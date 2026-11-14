@@ -797,7 +797,7 @@ class NativeBridgePlugin: Plugin {
 
   /// Bridge between the Readest Share Extension (separate process) and
   /// the host app's JS, via the App Group container at
-  /// `group.com.bilingify.readest`. Two directions on every activation:
+  /// `group.app.moyue.reader`. Two directions on every activation:
   ///
   ///   1. Groups (host → extension). Read the current library group list
   ///      from JS (`window.__readestGetGroups`) and persist it so the
@@ -1559,7 +1559,7 @@ class NativeBridgePlugin: Plugin {
   // CryptoSession reads/writes via these commands so the user's sync
   // passphrase persists across app launches.
 
-  private static let syncKeychainService = "com.bilingify.readest.sync-passphrase"
+  private static let syncKeychainService = "app.moyue.reader.sync-passphrase"
   private static let syncKeychainAccount = "default"
 
   private func syncKeychainBaseQuery() -> [String: Any] {
@@ -1637,7 +1637,7 @@ class NativeBridgePlugin: Plugin {
   // store: one service, the caller's `key` as the account, so secrets
   // like the Google Drive token set persist the same way.
 
-  private static let secureItemsService = "com.bilingify.readest.secure-items"
+  private static let secureItemsService = "app.moyue.reader.secure-items"
 
   private func secureItemBaseQuery(_ key: String) -> [String: Any] {
     return [
@@ -1960,7 +1960,7 @@ class NativeBridgePlugin: Plugin {
   }
 
   /// Resolve the default ubiquity container (nil = the first container in the
-  /// entitlements, iCloud.com.bilingify.readest) and ensure Documents/ exists.
+  /// entitlements, iCloud.app.moyue.reader) and ensure Documents/ exists.
   /// url(forUbiquityContainerIdentifier:) may block, so hop off the main
   /// thread before touching it.
   @objc public func icloud_container_status(_ invoke: Invoke) {

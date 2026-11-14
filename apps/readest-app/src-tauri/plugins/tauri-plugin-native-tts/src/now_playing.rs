@@ -140,8 +140,8 @@ fn create_controls<R: Runtime>(app: &AppHandle<R>, listeners: Listeners) -> Opti
         None
     };
     let config = PlatformConfig {
-        display_name: "Readest",
-        dbus_name: "readest",
+        display_name: "Moyue",
+        dbus_name: "moyue",
         hwnd,
     };
     let mut controls = MediaControls::new(config)

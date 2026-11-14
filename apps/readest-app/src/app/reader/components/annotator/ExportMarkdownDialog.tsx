@@ -890,7 +890,7 @@ const ExportMarkdownDialog: React.FC<ExportMarkdownDialogProps> = ({
                           </li>
                           <li className='ml-8'>
                             <code className='bg-base-300 rounded-sm px-1'>annotation.appLink</code>{' '}
-                            - {_('App deeplink (readest://)')}
+                            - {_('App deeplink (moyue://)')}
                           </li>
                           <li className='ml-8'>
                             <code className='bg-base-300 rounded-sm px-1'>annotation.webLink</code>{' '}

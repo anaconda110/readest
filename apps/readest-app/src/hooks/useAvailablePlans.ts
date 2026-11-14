@@ -5,15 +5,15 @@ import { AvailablePlan } from '@/types/quota';
 import { stubTranslation as _ } from '@/utils/misc';
 
 const IAP_PRODUCT_IDS = [
-  'com.bilingify.readest.monthly.plus',
-  'com.bilingify.readest.monthly.pro',
-  'com.bilingify.readest.yearly.plus',
-  'com.bilingify.readest.yearly.pro',
-  'com.bilingify.readest.storage.1gb.purchase',
-  'com.bilingify.readest.storage.2gb.purchase',
-  'com.bilingify.readest.storage.5gb.purchase',
-  'com.bilingify.readest.storage.10gb.purchase',
-  'com.bilingify.readest.customization.purchase',
+  'app.moyue.reader.monthly.plus',
+  'app.moyue.reader.monthly.pro',
+  'app.moyue.reader.yearly.plus',
+  'app.moyue.reader.yearly.pro',
+  'app.moyue.reader.storage.1gb.purchase',
+  'app.moyue.reader.storage.2gb.purchase',
+  'app.moyue.reader.storage.5gb.purchase',
+  'app.moyue.reader.storage.10gb.purchase',
+  'app.moyue.reader.customization.purchase',
 ];
 
 interface UseAvailablePlansParams {
