@@ -1,0 +1,17 @@
+name: Release Gate Dry-Run
+
+on:
+  push:
+    paths:
+      - .github/workflows/release-gate-dry-run.yml
+
+permissions:
+  contents: read
+
+jobs:
+  release-gate:
+    environment: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm gate
+        run: echo "release environment approved; dry-run reached"
