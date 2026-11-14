@@ -13,6 +13,10 @@ vi.mock('@/hooks/useTranslation', () => ({
   },
 }));
 
+vi.mock('@/context/EnvContext', () => ({
+  useEnv: () => ({ appService: null }),
+}));
+
 vi.mock('@/components/Dialog', () => ({
   __esModule: true,
   default: ({
@@ -246,7 +250,16 @@ describe('ImportNovelDialog', () => {
     const { onClose, onImport } = setup();
     await goToPreview();
     fireEvent.click(screen.getByText('Import'));
-    await waitFor(() => expect(onImport).toHaveBeenCalledWith(book.file));
+    await waitFor(() =>
+      expect(onImport).toHaveBeenCalledWith(
+        book.file,
+        expect.objectContaining({
+          canonicalUrl: 'https://n.example.org/toc',
+          tocUrl: 'https://n.example.org/toc',
+          selectedAll: true,
+        }),
+      ),
+    );
     expect(downloadNovelMock).toHaveBeenCalledWith(
       expect.objectContaining({ title: 'My Novel Chapters 1 - 6' }),
       'https://n.example.org/toc',

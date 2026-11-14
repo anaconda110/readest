@@ -77,6 +77,16 @@ describe('getBookContextMenuItemIds', () => {
     expect(getBookContextMenuItemIds(cloudOnly, { localSend: true })).not.toContain('sendNearby');
   });
 
+  it('offers Update from Source only for books with a saved novel source', () => {
+    const local = createBook({ downloadedAt: 1 });
+    expect(getBookContextMenuItemIds(local)).not.toContain('updateFromSource');
+    const novel = createBook({
+      downloadedAt: 1,
+      novelSourceUrl: 'https://www.timotxt.com/0201598585/',
+    });
+    expect(getBookContextMenuItemIds(novel)).toContain('updateFromSource');
+  });
+
   it('shows markUnread + markAbandoned + clearStatus for a finished book', () => {
     const book = createBook({ downloadedAt: 1, readingStatus: 'finished' });
     expect(getBookContextMenuItemIds(book)).toEqual([

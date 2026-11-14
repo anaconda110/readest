@@ -127,7 +127,13 @@ describe('wire envelope (frozen)', () => {
 
   // An offline Audiobookshelf download lives on this device only (#6256).
   test('stripDeviceLocalFields drops the offline-download stamp', () => {
-    const stripped = stripDeviceLocalFields({ ...book, format: 'ABS', absDownloadedAt: 7 });
+    const stripped = stripDeviceLocalFields({
+      ...book,
+      format: 'ABS',
+      absDownloadedAt: 7,
+      novelSourceUrl: 'https://www.timotxt.com/0201598585/',
+    });
     expect(stripped).not.toHaveProperty('absDownloadedAt');
+    expect(stripped).not.toHaveProperty('novelSourceUrl');
   });
 });

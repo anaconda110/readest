@@ -102,6 +102,9 @@ export interface ImportBookOptions {
 export interface Book {
   // if Book is a remote book we just lazy load the book content via url
   url?: string;
+  // Canonical web-novel source. Device-local like `filePath`: it names the
+  // local sidecar used by "Update from Source", not shared user data.
+  novelSourceUrl?: string;
   // if Book is a transient local book we can load the book content via filePath
   filePath?: string;
   // Other on-disk paths that resolved to this same book — a watched folder

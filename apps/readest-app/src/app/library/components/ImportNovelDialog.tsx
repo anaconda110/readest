@@ -3,9 +3,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MdMenuBook } from 'react-icons/md';
 import Dialog from '@/components/Dialog';
+import { useEnv } from '@/context/EnvContext';
 import { useTranslation } from '@/hooks/useTranslation';
 import { eventDispatcher } from '@/utils/event';
 import { downloadNovel, fetchNovelToc, isNovelImportCancelled } from '@/services/novel/novelImport';
+import {
+  novelSourceFsFromAppService,
+  saveNovelChapterHtml,
+  type NovelSourceRecord,
+} from '@/services/novel/novelSourceStore';
+import { canonicalNovelUrl, novelTocUrl } from '@/services/novel/sources';
 import { openWebBrowser } from '@/services/webBrowser/webBrowser';
 import { getWebBrowserOptions } from '@/services/webBrowser/webBrowserOptions';
 import type { WebBrowserPage } from '@/services/webBrowser/webBrowser';
@@ -15,7 +22,7 @@ interface ImportNovelDialogProps {
   isOpen: boolean;
   onClose: () => void;
   /** Hand the finished `.epub` to the normal library import path. */
-  onImport: (file: File) => Promise<void>;
+  onImport: (file: File, source?: NovelSourceRecord) => Promise<void>;
 }
 
 type Phase = 'url' | 'preview' | 'downloading';
@@ -29,6 +36,7 @@ type Phase = 'url' | 'preview' | 'downloading';
  */
 const ImportNovelDialog: React.FC<ImportNovelDialogProps> = ({ isOpen, onClose, onImport }) => {
   const _ = useTranslation();
+  const { appService } = useEnv();
   const [url, setUrl] = useState('');
   const [phase, setPhase] = useState<Phase>('url');
   const [toc, setToc] = useState<NovelToc | null>(null);
@@ -176,10 +184,25 @@ const ImportNovelDialog: React.FC<ImportNovelDialogProps> = ({ isOpen, onClose, 
     const title = bookTitle.trim();
     if (selectedChapters.length === 0 || !title) return;
     const selectedToc = { ...toc, title, chapters: selectedChapters };
+    const canonicalUrl = canonicalNovelUrl(sourceUrl) ?? sourceUrl;
+    const tocUrl = novelTocUrl(sourceUrl) ?? sourceUrl;
     const identityKey =
       selectedChapters.length === toc.chapters.length
-        ? sourceUrl
-        : [sourceUrl, ...selectedChapters.map((chapter) => chapter.url)].join('\n');
+        ? canonicalUrl
+        : [canonicalUrl, ...selectedChapters.map((chapter) => chapter.url)].join('\n');
+    const sourceRecord: NovelSourceRecord = {
+      version: 1,
+      canonicalUrl,
+      tocUrl,
+      title,
+      author: toc.author,
+      coverUrl: toc.coverUrl,
+      identityKey,
+      selectedAll: selectedChapters.length === toc.chapters.length,
+      fetchedAt: Date.now(),
+      chapters: selectedChapters,
+    };
+    const sourceFs = appService ? novelSourceFsFromAppService(appService) : null;
     const controller = new AbortController();
     abortRef.current = controller;
     setPhase('downloading');
@@ -191,6 +214,11 @@ const ImportNovelDialog: React.FC<ImportNovelDialogProps> = ({ isOpen, onClose, 
         identityKey,
         renderChapters,
         translate: _,
+        onChapterCached: async (chapter, html) => {
+          if (sourceFs && chapter.id) {
+            await saveNovelChapterHtml(sourceFs, canonicalUrl, chapter.id, html);
+          }
+        },
         onProgress: (done, total) => setProgress({ done, total }),
       });
       if (book.failures >= book.chapterCount) {
@@ -199,7 +227,7 @@ const ImportNovelDialog: React.FC<ImportNovelDialogProps> = ({ isOpen, onClose, 
         return;
       }
       if (controller.signal.aborted) return;
-      await onImport(book.file);
+      await onImport(book.file, sourceRecord);
       if (book.failures > 0) {
         eventDispatcher.dispatch('toast', {
           type: 'info',

@@ -1057,6 +1057,7 @@ export type BookContextMenuItemId =
   | 'markAbandoned'
   | 'clearStatus'
   | 'showDetails'
+  | 'updateFromSource'
   | 'showInFinder'
   | 'searchGoodreads'
   | 'download'
@@ -1192,6 +1193,8 @@ export const getBookContextMenuItemIds = (
     ids.push('clearStatus');
   }
   ids.push('showDetails', 'showInFinder', 'searchGoodreads');
+  // Web-novel imports keep a source record next to the local EPUB.
+  if (book.novelSourceUrl) ids.push('updateFromSource');
   // A feed book has no file to move: every transfer action would fail, and the
   // share dialog uploads before it can hand out a link (issue #5307).
   if (!isFeedBook(book)) {

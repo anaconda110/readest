@@ -10,6 +10,7 @@ import {
 import { stableIdentifier } from '@/services/send/conversion/convertToEpub';
 import { ConversionError } from '@/services/send/conversion/types';
 import type { NovelToc } from '@/services/novel/chapterList';
+import { getMetadataHash } from '@/utils/book';
 
 async function unzipEpub(blob: Blob): Promise<Map<string, string>> {
   await configureZip();
@@ -654,4 +655,90 @@ it('rejects a private table of contents before fetching', async () => {
     'private',
   );
   expect(fetchPage).not.toHaveBeenCalled();
+});
+
+describe('novel updates', () => {
+  const tocWithIds = (count: number): NovelToc => ({
+    ...toc(),
+    chapters: toc()
+      .chapters.slice(0, count)
+      .map((chapter, index) => ({ ...chapter, id: String(index + 1) })),
+  });
+
+  it('reuses cached chapter HTML instead of fetching it again', async () => {
+    const fetchPage = vi.fn(makeFetchPage());
+    const cached = new Map([
+      [
+        '1',
+        '<h1>Chapter 1: Part 1</h1><p>Cached prose that is long enough to stand on its own.</p>',
+      ],
+    ]);
+    const book = await downloadNovel(tocWithIds(2), TOC_URL, {
+      fetchPage,
+      cachedChapterHtml: cached,
+    });
+
+    expect(fetchPage.mock.calls.map(([url]) => url)).not.toContain(`${BASE}/novel/7/1`);
+    expect(fetchPage.mock.calls.map(([url]) => url)).toContain(`${BASE}/novel/7/2`);
+    const files = await unzipEpub(book.file);
+    expect(files.get('OEBPS/chapter-1.xhtml')).toContain('Cached prose');
+    expect(files.get('OEBPS/chapter-2.xhtml')).toContain('Chapter 2 paragraph 3');
+  });
+
+  it('caches extracted HTML before asset bundling', async () => {
+    const onChapterCached = vi.fn();
+    const page = chapterPage(1).replace(
+      '<div id="content">',
+      '<div id="content"><img src="https://cdn.example.org/x.jpg"/>',
+    );
+    await downloadNovel(tocWithIds(1), TOC_URL, {
+      fetchPage: makeFetchPage({ [`${BASE}/novel/7/1`]: page }),
+      onChapterCached,
+    });
+
+    expect(onChapterCached).toHaveBeenCalledTimes(1);
+    const [chapter, html] = onChapterCached.mock.calls[0]!;
+    expect(chapter).toMatchObject({ id: '1', title: 'Chapter 1: Part 1' });
+    expect(html).toContain('https://cdn.example.org/x.jpg');
+  });
+
+  it('keeps chapter files and the EPUB identifier stable when chapters are appended', async () => {
+    const first = await downloadNovel(tocWithIds(3), TOC_URL, {
+      fetchPage: makeFetchPage(),
+      identityKey: TOC_URL,
+    });
+    const second = await downloadNovel(tocWithIds(4), TOC_URL, {
+      fetchPage: makeFetchPage(),
+      identityKey: TOC_URL,
+    });
+    const [firstFiles, secondFiles] = await Promise.all([
+      unzipEpub(first.file),
+      unzipEpub(second.file),
+    ]);
+
+    expect(firstFiles.get('content.opf')).toContain(
+      `<dc:identifier id="book-id">${stableIdentifier(TOC_URL)}</dc:identifier>`,
+    );
+    expect(secondFiles.get('content.opf')).toContain(
+      `<dc:identifier id="book-id">${stableIdentifier(TOC_URL)}</dc:identifier>`,
+    );
+    expect(firstFiles.get('OEBPS/chapter-1.xhtml')).toBe(secondFiles.get('OEBPS/chapter-1.xhtml'));
+    expect(firstFiles.has('OEBPS/chapter-3.xhtml')).toBe(true);
+    expect(secondFiles.has('OEBPS/chapter-4.xhtml')).toBe(true);
+
+    const metadataOf = (files: Map<string, string>) => {
+      const opf = files.get('content.opf')!;
+      return {
+        title: opf.match(/<dc:title>([^<]*)<\/dc:title>/)![1]!,
+        author: opf.match(/<dc:creator>([^<]*)<\/dc:creator>/)![1]!,
+        identifier: opf.match(/<dc:identifier id="book-id">([^<]*)<\/dc:identifier>/)![1]!,
+      };
+    };
+    const firstMeta = metadataOf(firstFiles);
+    const secondMeta = metadataOf(secondFiles);
+    expect(secondMeta).toEqual(firstMeta);
+    expect(getMetadataHash({ ...secondMeta, language: 'en' })).toBe(
+      getMetadataHash({ ...firstMeta, language: 'en' }),
+    );
+  });
 });

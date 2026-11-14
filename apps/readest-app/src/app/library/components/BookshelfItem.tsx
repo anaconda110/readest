@@ -219,6 +219,12 @@ const BookshelfItem: React.FC<BookshelfItemProps> = ({
           showBookDetailsModal(book);
         },
       },
+      updateFromSource: {
+        text: _('Update from Source'),
+        action: async () => {
+          eventDispatcher.dispatch('novel-update', { book });
+        },
+      },
       showInFinder: {
         text: _(fileRevealLabel),
         action: async () => {

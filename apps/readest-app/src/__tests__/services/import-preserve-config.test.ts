@@ -174,4 +174,49 @@ describe('importBook config preservation (issue #5716)', () => {
     expect(fs.copyFile).not.toHaveBeenCalled();
     expect(fs.writeFile.mock.calls.some((call) => call[0] === bookPath)).toBe(false);
   });
+
+  it('re-keys a same-book update and carries progress, location and notes to the new hash', async () => {
+    const fs = service.getFs();
+    const oldHash = 'old-hash';
+    const newHash = 'new-hash';
+    const oldConfigPath = `${oldHash}/config.json`;
+    mockPartialMD5.mockReset();
+    mockPartialMD5.mockResolvedValueOnce(oldHash).mockResolvedValueOnce(newHash);
+
+    const savedConfig = {
+      bookHash: oldHash,
+      progress: [3, 10],
+      location: { current: 3, next: 4, total: 10 },
+      booknotes: [{ id: 'note-1', type: 'bookmark', cfi: 'epubcfi(/6/4)', updatedAt: 7 }],
+    };
+    fs.exists.mockImplementation(
+      async (path: string) => path === oldConfigPath || path === oldHash,
+    );
+    fs.readFile.mockImplementation(async (path: string) =>
+      path === oldConfigPath ? JSON.stringify(savedConfig) : '{}',
+    );
+
+    const books: Book[] = [];
+    const first = await service.importBook(
+      new File(['v1'], 'test.epub', { type: 'application/epub+zip' }),
+      books,
+    );
+    const updated = await service.importBook(
+      new File(['v2'], 'test.epub', { type: 'application/epub+zip' }),
+      books,
+    );
+
+    expect(first?.hash).toBe(newHash);
+    expect(updated?.hash).toBe(newHash);
+    const newConfigWrite = fs.writeFile.mock.calls.find(
+      (call) => call[0] === `${newHash}/config.json`,
+    );
+    expect(newConfigWrite).toBeTruthy();
+    const migrated = JSON.parse(newConfigWrite![2] as string);
+    expect(migrated.bookHash).toBe(newHash);
+    expect(migrated.progress).toEqual([3, 10]);
+    expect(migrated.location).toEqual({ current: 3, next: 4, total: 10 });
+    expect(migrated.booknotes).toEqual(savedConfig.booknotes);
+    expect(fs.removeDir).toHaveBeenCalledWith(oldHash, 'Books', true);
+  });
 });

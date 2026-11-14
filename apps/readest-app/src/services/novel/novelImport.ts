@@ -22,6 +22,7 @@ import { ConversionError } from '@/services/send/conversion/types';
 import type { ConvertedBook, EpubChapter, EpubImage } from '@/services/send/conversion/types';
 import { parseChapterList, parseWorkMetadata } from './chapterList';
 import type { NovelChapterLink, NovelToc, WorkMetadata } from './chapterList';
+import { canonicalNovelUrl, decodeNovelHtml, novelTocUrl } from './sources';
 
 /** Hard cap — a runaway TOC heuristic must not schedule tens of thousands of
  *  requests. Real novels top out around this size. */
@@ -64,6 +65,12 @@ export interface NovelDownloadOptions {
    *  Strings are declared with `stubTranslation` so the i18n scanner sees
    *  them; pass the app's `_` to localize. */
   translate?: (key: string) => string;
+  /** Chapter HTML from a previous build, keyed by `NovelChapterLink.id`.
+   *  Cached chapters skip the network entirely. */
+  cachedChapterHtml?: ReadonlyMap<string, string>;
+  /** Called with the extracted (pre-asset-bundling) HTML of a freshly fetched
+   *  chapter so the caller can persist it for the next update. */
+  onChapterCached?: (chapter: NovelChapterLink, html: string) => void | Promise<void>;
 }
 
 const abortError = () => new DOMException('novel import cancelled', 'AbortError');
@@ -228,9 +235,10 @@ const defaultFetchPage: FetchPage = async (url, signal) => {
     );
   }
   const body = new Uint8Array(await res.arrayBuffer());
+  const finalUrl = res.url || url;
   return {
-    html: decodeHtmlBody(body, res.headers.get('content-type')),
-    finalUrl: res.url || url,
+    html: decodeNovelHtml(decodeHtmlBody(body, res.headers.get('content-type')), finalUrl),
+    finalUrl,
   };
 };
 
@@ -250,21 +258,57 @@ export async function fetchNovelToc(
   options: FetchNovelTocOptions = {},
 ): Promise<NovelToc> {
   const fetchPage = withTransientRetry(options.fetchPage ?? defaultFetchPage);
-  const { html, finalUrl } = options.page ?? (await fetchPage(url, options.signal));
+  const target = options.page ? url : (novelTocUrl(url) ?? url);
+  const page = options.page ?? (await fetchPage(target, options.signal));
+  const { finalUrl } = page;
+  const html = decodeNovelHtml(page.html, finalUrl);
   assertNovelUrlAllowed(finalUrl);
-  const toc = parseChapterList(html, finalUrl);
+  let toc = parseChapterList(html, finalUrl);
   if (!toc) {
     throw new ConversionError(
       'No chapter list found on this page. Open the novel’s table-of-contents page and try again.',
       'parse_failed',
     );
   }
+  toc = await backfillFromBookPage(toc, finalUrl, fetchPage, options.signal);
   const chapters = toc.chapters.slice(0, MAX_NOVEL_CHAPTERS);
   return {
     ...toc,
     ...(await backfillMetadata(toc, chapters, fetchPage, options.signal)),
     chapters,
   };
+}
+
+/**
+ * Some sites put the work's real metadata (and cover) on the book page rather
+ * than the chapter index. Only a known source adapter can name that page.
+ */
+async function backfillFromBookPage(
+  toc: NovelToc,
+  finalUrl: string,
+  fetchPage: FetchPage,
+  signal?: AbortSignal,
+): Promise<NovelToc> {
+  const bookUrl = canonicalNovelUrl(finalUrl);
+  if (!bookUrl || bookUrl === finalUrl) return toc;
+  if (!toc.weak.title && !toc.weak.author && toc.coverUrl) return toc;
+  try {
+    const page = await fetchPage(bookUrl, signal);
+    const found = parseWorkMetadata(decodeNovelHtml(page.html, page.finalUrl), page.finalUrl);
+    return {
+      ...toc,
+      ...(found.title ? { title: found.title } : {}),
+      ...(found.author ? { author: found.author } : {}),
+      ...(found.coverUrl ? { coverUrl: found.coverUrl } : {}),
+      weak: {
+        title: toc.weak.title && !found.title,
+        author: toc.weak.author && !found.author,
+      },
+    };
+  } catch (err) {
+    if (isNovelImportCancelled(err) || signal?.aborted) throw abortError();
+    return toc;
+  }
 }
 
 /**
@@ -283,8 +327,8 @@ async function backfillMetadata(
   if (!first || (!toc.weak.title && !toc.weak.author)) return {};
   let found: WorkMetadata;
   try {
-    const { html } = await fetchPage(first.url, signal);
-    found = parseWorkMetadata(html);
+    const page = await fetchPage(first.url, signal);
+    found = parseWorkMetadata(decodeNovelHtml(page.html, page.finalUrl), page.finalUrl);
   } catch (err) {
     if (isNovelImportCancelled(err) || signal?.aborted) throw abortError();
     return {};
@@ -292,6 +336,7 @@ async function backfillMetadata(
   return {
     ...(toc.weak.title && found.title ? { title: found.title } : {}),
     ...(toc.weak.author && found.author ? { author: found.author } : {}),
+    ...(!toc.coverUrl && found.coverUrl ? { coverUrl: found.coverUrl } : {}),
   };
 }
 
@@ -307,9 +352,10 @@ const escapeHtml = (s: string): string =>
 // the page (bare `<div id="content">` full of `<br>`-separated text lines is
 // common and scores poorly).
 const CHAPTER_CONTENT_SELECTORS = [
+  '.chapter-content .content',
+  '.chapter-content',
   '#chaptercontent',
   '#chapter-content',
-  '.chapter-content',
   '#booktxt',
   '#content',
   '.read-content',
@@ -329,6 +375,7 @@ export function extractChapterHtml(
   chapterTitle: string,
   pageUrl: string,
 ): string | null {
+  pageHtml = decodeNovelHtml(pageHtml, pageUrl);
   let content: string | null = null;
   try {
     // Readability mutates the document it scores, so give it its own parse.
@@ -350,7 +397,9 @@ export function extractChapterHtml(
   if (!content || stripTags(content).length < CHAPTER_QUALITY_FLOOR) return null;
 
   const body = new DOMParser().parseFromString(content, 'text/html').body;
-  body.querySelectorAll('video, audio').forEach((el) => el.remove());
+  body
+    .querySelectorAll('video, audio, script, style, ins, iframe, .gadBlock, .adUnit')
+    .forEach((el) => el.remove());
   // Drop a leading heading that duplicates the TOC title — the canonical
   // heading is prepended below.
   const heading = body.querySelector('h1, h2, h3');
@@ -373,7 +422,8 @@ export async function downloadNovel(
   const fetchPage = withTransientRetry(options.fetchPage ?? defaultFetchPage);
   const fetchCover = options.fetchCover ?? defaultFetchCover;
   const translate = options.translate ?? ((key: string) => key);
-  const { onProgress, identityKey = sourceUrl } = options;
+  const { onProgress } = options;
+  const identityKey = options.identityKey ?? canonicalNovelUrl(sourceUrl) ?? sourceUrl;
   const controller = new AbortController();
   const signal = controller.signal;
   const onAbort = () => controller.abort();
@@ -421,38 +471,54 @@ export async function downloadNovel(
         let html: string | null = null;
         try {
           assertNovelUrlAllowed(link.url);
-          let page: FetchedPage;
-          let rendered = false;
-          try {
-            if (options.renderChapters && renderPage) {
+          const cacheKey = link.id;
+          html = cacheKey ? (options.cachedChapterHtml?.get(cacheKey) ?? null) : null;
+          let pageUrl = link.url;
+          if (html === null) {
+            let page: FetchedPage;
+            let rendered = false;
+            try {
+              if (options.renderChapters && renderPage) {
+                page = await renderPage(link.url, signal);
+                rendered = true;
+              } else {
+                page = await fetchChapter(link.url);
+              }
+            } catch (err) {
+              if (
+                signal?.aborted ||
+                isNovelImportCancelled(err) ||
+                !renderPage ||
+                options.renderChapters ||
+                isTransientFetchError(err)
+              )
+                throw err;
               page = await renderPage(link.url, signal);
               rendered = true;
-            } else {
-              page = await fetchChapter(link.url);
             }
-          } catch (err) {
-            if (
-              signal?.aborted ||
-              isNovelImportCancelled(err) ||
-              !renderPage ||
-              options.renderChapters ||
-              isTransientFetchError(err)
-            )
-              throw err;
-            page = await renderPage(link.url, signal);
-            rendered = true;
-          }
-          html = extractChapterHtml(page.html, link.title, page.finalUrl);
-          if (html === null && renderPage && !rendered) {
-            assertNovelUrlAllowed(page.finalUrl);
-            page = await renderPage(page.finalUrl, signal);
+            pageUrl = page.finalUrl;
             html = extractChapterHtml(page.html, link.title, page.finalUrl);
+            if (html === null && renderPage && !rendered) {
+              assertNovelUrlAllowed(page.finalUrl);
+              page = await renderPage(page.finalUrl, signal);
+              pageUrl = page.finalUrl;
+              html = extractChapterHtml(page.html, link.title, page.finalUrl);
+            }
+            if (html !== null) {
+              // A cache write is an optimization; never lose the chapter when
+              // the disk is full or the sidecar store is unavailable.
+              try {
+                await options.onChapterCached?.(link, html);
+              } catch {
+                /* chapter is still importable without a cache entry */
+              }
+            }
           }
           if (html !== null) {
             const content = html;
             const bundled = assetQueue.then(async () => {
               if (signal?.aborted) throw abortError();
-              const bundle = await bundleAssets(content, page.finalUrl, {
+              const bundle = await bundleAssets(content, pageUrl, {
                 maxBytes: remainingAssetBytes,
                 signal,
               });
@@ -481,7 +547,7 @@ export async function downloadNovel(
             `<p>${escapeHtml(translate(_('This chapter could not be downloaded.')))}</p>` +
             `<p><a href="${escapeHtml(link.url)}">${escapeHtml(link.url)}</a></p>`;
         }
-        results[index] = { title: link.title, html };
+        results[index] = { title: link.title, html, ...(link.id ? { id: link.id } : {}) };
         done++;
         onProgress?.(done, total);
         // Extraction is main-thread CPU work (Tauri IPC can't run in a Worker) —

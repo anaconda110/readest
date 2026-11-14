@@ -172,6 +172,7 @@ export const parseRemoteLibraryIndex = (raw: string | null): RemoteLibraryIndex 
 const DEVICE_LOCAL_BOOK_FIELDS = [
   'filePath',
   'altFilePaths',
+  'novelSourceUrl',
   'coverImageUrl',
   'downloadedAt',
   'coverDownloadedAt',

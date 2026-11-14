@@ -20,6 +20,11 @@ const escapeXml = (str: string): string => {
     .replace(/'/g, '&apos;');
 };
 
+const chapterFile = (chapter: EpubChapter, index: number): string => {
+  const safeId = chapter.id?.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80);
+  return safeId ? `chapter-${safeId}` : `chapter${index + 1}`;
+};
+
 // Chapter HTML leaves void elements (`<br>`, `<img>`) unclosed and may carry
 // HTML-only entities (`&nbsp;`), neither of which is well-formed XML. Strict
 // XML readers (CrossPoint's Expat) refuse such a chapter, so re-serialize the
@@ -93,11 +98,11 @@ export async function buildEpub(
       ? buildNavMap(metadata.toc, 'OEBPS/chapter1.xhtml', escapeXml)
       : chapters
           .map((chapter, i) => {
-            const id = `chapter${i + 1}`;
+            const file = chapterFile(chapter, i);
             return (
-              `<navPoint id="navPoint-${id}" playOrder="${i + 1}">` +
+              `<navPoint id="navPoint-${file}" playOrder="${i + 1}">` +
               `<navLabel><text>${escapeXml(chapter.title)}</text></navLabel>` +
-              `<content src="./OEBPS/${id}.xhtml"/></navPoint>`
+              `<content src="./OEBPS/${file}.xhtml"/></navPoint>`
             );
           })
           .join('\n');
@@ -147,13 +152,17 @@ export async function buildEpub(
   </head>
   ${toXhtmlBody(chapter.html)}
 </html>`;
-    await zipWriter.add(`OEBPS/chapter${i + 1}.xhtml`, new TextReader(xhtml), zipWriteOptions);
+    await zipWriter.add(
+      `OEBPS/${chapterFile(chapter, i)}.xhtml`,
+      new TextReader(xhtml),
+      zipWriteOptions,
+    );
   }
 
   const manifest = chapters
     .map(
-      (_, i) =>
-        `<item id="chap${i + 1}" href="OEBPS/chapter${i + 1}.xhtml" media-type="application/xhtml+xml"/>`,
+      (chapter, i) =>
+        `<item id="chap${i + 1}" href="OEBPS/${chapterFile(chapter, i)}.xhtml" media-type="application/xhtml+xml"/>`,
     )
     .join('\n    ');
   const imageManifest = images

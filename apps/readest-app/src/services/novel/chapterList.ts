@@ -13,6 +13,9 @@
 export interface NovelChapterLink {
   title: string;
   url: string;
+  /** Stable per-work key (URL basename) so an update keeps the same EPUB file
+   *  name — and therefore the same reading position — as chapters are added. */
+  id?: string;
 }
 
 export interface NovelToc {
@@ -31,6 +34,7 @@ export interface NovelToc {
 export interface WorkMetadata {
   title: string | null;
   author: string | null;
+  coverUrl?: string | null;
 }
 
 /** Fewer links than this is not a chapter list. */
@@ -207,21 +211,38 @@ const metaContent = (doc: Document, selectors: string[]): string | null => {
 };
 
 /** "斗破苍穹最新章节_笔趣阁" → "斗破苍穹"; "Title - Read Online" → "Title". */
+const TITLE_SUFFIX =
+  /(?:\s*(?:最新章节列表|最新章节|章节列表|章节目录|全文阅读|无弹窗|章節列表|最新章節|章節目錄|全文閱讀|無彈窗))+$/;
+
 const cleanTitleTag = (raw: string): string => {
   const first = raw.split(/\s*[|_｜]\s*|\s+[-–—]\s+/)[0]?.trim() || raw.trim();
-  return first.replace(/(最新章节列表|最新章节|章节列表|章节目录|全文阅读|无弹窗)+$/, '').trim();
+  return first.replace(TITLE_SUFFIX, '').trim();
 };
 
 /** Meta tags that name the work itself, as opposed to the page or the site. */
 const WORK_TITLE_META = [
   'meta[property="og:novel:book_name"]',
+  'meta[name="og:novel:book_name"]',
   'meta[property="og:title"]',
+  'meta[name="og:title"]',
   'meta[name="twitter:title"]',
+  'meta[property="twitter:title"]',
 ];
-const WORK_AUTHOR_META = ['meta[property="og:novel:author"]', 'meta[property="books:author"]'];
+const WORK_AUTHOR_META = [
+  'meta[property="og:novel:author"]',
+  'meta[name="og:novel:author"]',
+  'meta[property="books:author"]',
+  'meta[name="books:author"]',
+];
+const WORK_COVER_META = [
+  'meta[property="og:image"]',
+  'meta[name="og:image"]',
+  'meta[name="twitter:image"]',
+  'meta[property="twitter:image"]',
+];
 
 /** Labels a novel site uses to introduce the writer's name. */
-const AUTHOR_LABEL = /(?:作者|著者)\s*[:：]\s*/;
+const AUTHOR_LABEL = /(?:作者|著者)\s*[/／:：]\s*/;
 /**
  * Field labels that sit right after the byline on the same line. The flattened
  * text runs them into the name with no separator at all — "作者：五月不行"
@@ -284,7 +305,7 @@ const extractMetadata = (
   const workAuthor = metaContent(doc, WORK_AUTHOR_META);
   const author = workAuthor || metaContent(doc, ['meta[name="author"]']) || bylineAuthor(doc) || '';
 
-  const rawCover = metaContent(doc, ['meta[property="og:image"]']);
+  const rawCover = metaContent(doc, WORK_COVER_META);
   let coverUrl: string | null = null;
   if (rawCover) {
     try {
@@ -321,21 +342,50 @@ const headingText = (doc: Document, selectors: string[]): string | null => {
  * index already had — notably the site-wide `meta[name=author]`, which is
  * deliberately not consulted here.
  */
-export function parseWorkMetadata(html: string, _pageUrl?: string): WorkMetadata {
+export function parseWorkMetadata(html: string, pageUrl?: string): WorkMetadata {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const titleTag = cleanTitleTag(doc.querySelector('title')?.textContent || '');
+  const rawCover = metaContent(doc, WORK_COVER_META);
+  const headingTitle = headingText(doc, WORK_TITLE_HEADINGS);
+  let coverUrl: string | null = null;
+  if (rawCover && pageUrl) {
+    try {
+      const resolved = new URL(rawCover, pageUrl);
+      if (resolved.protocol === 'http:' || resolved.protocol === 'https:') {
+        coverUrl = resolved.href;
+      }
+    } catch {
+      /* unparseable cover URL — cover is optional */
+    }
+  }
   return {
     title:
       metaContent(doc, WORK_TITLE_META) ||
-      headingText(doc, WORK_TITLE_HEADINGS) ||
+      (headingTitle && cleanTitleTag(headingTitle)) ||
       (titleTag && !isChapterText(titleTag) ? titleTag : null) ||
       null,
     author:
       metaContent(doc, WORK_AUTHOR_META) ||
       headingText(doc, WORK_AUTHOR_HEADINGS)?.replace(/^by\s+/i, '') ||
       null,
+    ...(coverUrl ? { coverUrl } : {}),
   };
 }
+
+/** Stable chapter key from the last URL segment (`86.html` → `86`). */
+const chapterIdFromUrl = (url: string): string | null => {
+  try {
+    const segment = new URL(url).pathname.split('/').filter(Boolean).pop();
+    if (!segment) return null;
+    const safe = segment
+      .replace(/\.[a-z0-9]+$/i, '')
+      .replace(/[^A-Za-z0-9_-]/g, '')
+      .slice(0, 80);
+    return safe || null;
+  } catch {
+    return null;
+  }
+};
 
 /**
  * Parse a web-novel TOC page into title/author/cover metadata plus an ordered
@@ -375,8 +425,15 @@ export function parseChapterList(html: string, pageUrl: string): NovelToc | null
   if (contained.length < MIN_CHAPTER_LINKS) return null;
 
   const ordered = orderChapters(contained);
+  const usedIds = new Set<string>();
   return {
     ...extractMetadata(doc, pageUrl),
-    chapters: ordered.map((entry) => ({ title: entry.text, url: entry.url.href })),
+    chapters: ordered.map((entry, index) => {
+      const base = chapterIdFromUrl(entry.url.href) ?? String(index + 1);
+      let id = base;
+      for (let suffix = 2; usedIds.has(id); suffix++) id = `${base}-${suffix}`;
+      usedIds.add(id);
+      return { title: entry.text, url: entry.url.href, id };
+    }),
   };
 }

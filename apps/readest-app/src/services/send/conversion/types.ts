@@ -19,6 +19,10 @@ export interface ConvertedBook {
 export interface EpubChapter {
   title: string;
   html: string;
+  /** Stable file-name key. A re-build that adds chapters keeps every existing
+   *  chapter at the same `OEBPS/chapter-<id>.xhtml` path, so CFI locations and
+   *  reading progress survive an update. */
+  id?: string;
 }
 
 /** An image resource embedded directly in the EPUB. Path is relative to

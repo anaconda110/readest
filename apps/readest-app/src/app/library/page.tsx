@@ -126,6 +126,15 @@ import ImportNovelDialog from './components/ImportNovelDialog';
 import ImportPastedTextDialog from './components/ImportPastedTextDialog';
 import NowPlayingBar from './components/NowPlayingBar';
 import { convertToEpubWithWorker } from '@/services/send/conversion/conversionWorker';
+import { downloadNovel, fetchNovelToc } from '@/services/novel/novelImport';
+import {
+  loadNovelChapterCache,
+  loadNovelSource,
+  novelSourceFsFromAppService,
+  saveNovelChapterHtml,
+  saveNovelSource,
+  type NovelSourceRecord,
+} from '@/services/novel/novelSourceStore';
 import type { WebBrowserPage } from '@/services/webBrowser/webBrowser';
 import ClipSignInAlert from '@/components/ClipSignInAlert';
 import useShortcuts from '@/hooks/useShortcuts';
@@ -276,6 +285,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
   const [showImportPastedText, setShowImportPastedText] = useState(false);
   const [importMenuAnchor, setImportMenuAnchor] = useState<HTMLElement | null>(null);
   const [loading, setLoading] = useState(false);
+  const novelUpdateRef = useRef(false);
   // Seed from the library store: if we already have books in memory (the
   // common reader → library return path), treat the page as loaded
   // immediately. This prevents `showBookshelf` from briefly being false on
@@ -951,7 +961,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
     files: SelectedFile[],
     groupId?: string,
     options: { silent?: boolean } = {},
-  ): Promise<{ failedPaths: string[]; importedCount: number }> =>
+  ): Promise<{ failedPaths: string[]; importedCount: number; importedBooks: Book[] }> =>
     // Whole runs are serialized (see enqueueImportRun); the lookup index is
     // built inside the run so a queued run sees everything the previous one
     // imported.
@@ -961,7 +971,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
     files: SelectedFile[],
     groupId?: string,
     options: { silent?: boolean } = {},
-  ): Promise<{ failedPaths: string[]; importedCount: number }> => {
+  ): Promise<{ failedPaths: string[]; importedCount: number; importedBooks: Book[] }> => {
     setLoading(true);
     const { library } = useLibraryStore.getState();
     // Build the lookup index ONCE per import batch so each book lookup is
@@ -977,6 +987,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
     const failedImports: Array<{ filename: string; errorMessage: string }> = [];
     const failedPaths: string[] = [];
     const successfulImports: string[] = [];
+    const successfulBooks: Book[] = [];
 
     // Readest's own Books/ prefix is resolved once at app init and persisted
     // in `settings.localBooksDir`. We hand it to `ingestFile` so the in-place
@@ -1064,6 +1075,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
         );
         if (!book) return null;
         successfulImports.push(book.title);
+        successfulBooks.push(book);
         return book;
       } catch (error) {
         const filename = typeof file === 'string' ? file : file.name;
@@ -1134,8 +1146,107 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
     }
 
     setLoading(false);
-    return { failedPaths, importedCount: successfulImports.length };
+    return { failedPaths, importedCount: successfulImports.length, importedBooks: successfulBooks };
   };
+
+  const handleNovelUpdate = useCallback(
+    async (event: CustomEvent) => {
+      const target = (event.detail as { book?: Book } | undefined)?.book;
+      if (!target?.novelSourceUrl || !appService) return;
+      if (novelUpdateRef.current) return;
+      novelUpdateRef.current = true;
+      const sourceFs = novelSourceFsFromAppService(appService);
+      const record = await loadNovelSource(sourceFs, target.novelSourceUrl);
+      if (!record) {
+        eventDispatcher.dispatch('toast', {
+          type: 'error',
+          message: _('Could not find the saved source for this book.'),
+          timeout: 5000,
+        });
+        novelUpdateRef.current = false;
+        return;
+      }
+      eventDispatcher.dispatch('toast', {
+        type: 'info',
+        message: _('Updating “{{title}}” from source…', { title: record.title }),
+        timeout: 4000,
+      });
+      try {
+        const toc = await fetchNovelToc(record.tocUrl);
+        const selected = record.selectedAll
+          ? toc.chapters
+          : toc.chapters.filter((chapter) =>
+              record.chapters.some((saved) => saved.url === chapter.url),
+            );
+        if (selected.length === 0) {
+          throw new Error(_('No chapters found on the source page.'));
+        }
+        const updateToc = {
+          ...toc,
+          title: record.title,
+          author: record.author,
+          coverUrl: record.coverUrl ?? toc.coverUrl,
+          chapters: selected,
+        };
+        const cached = await loadNovelChapterCache(sourceFs, record.canonicalUrl, selected);
+        const novel = await downloadNovel(updateToc, record.canonicalUrl, {
+          identityKey: record.identityKey,
+          cachedChapterHtml: cached,
+          translate: _,
+          onChapterCached: async (chapter, html) => {
+            if (chapter.id) {
+              await saveNovelChapterHtml(sourceFs, record.canonicalUrl, chapter.id, html);
+            }
+          },
+        });
+        if (novel.failures >= novel.chapterCount) {
+          throw new Error(_('No chapters could be downloaded.'));
+        }
+        const { importedBooks } = await importBooks([{ file: novel.file }], target.groupId);
+        await saveNovelSource(sourceFs, {
+          ...record,
+          coverUrl: updateToc.coverUrl,
+          fetchedAt: Date.now(),
+          chapters: selected,
+        });
+        const updated = importedBooks[0];
+        if (updated) {
+          updated.novelSourceUrl = record.canonicalUrl;
+          await updateBooks(envConfig, [updated]);
+        }
+        eventDispatcher.dispatch('toast', {
+          type: novel.failures > 0 ? 'info' : 'success',
+          message:
+            novel.failures > 0
+              ? _('{{count}} chapters could not be downloaded.', { count: novel.failures })
+              : _('Updated “{{title}}”', { title: record.title }),
+          timeout: 4000,
+        });
+      } catch (err) {
+        eventDispatcher.dispatch('toast', {
+          type: 'error',
+          message: err instanceof Error ? err.message : _('Could not update this book.'),
+          timeout: 6000,
+        });
+      } finally {
+        novelUpdateRef.current = false;
+      }
+    },
+    [appService, envConfig, importBooks, updateBooks, _],
+  );
+
+  const novelUpdateHandlerRef = useRef(handleNovelUpdate);
+  useEffect(() => {
+    novelUpdateHandlerRef.current = handleNovelUpdate;
+  }, [handleNovelUpdate]);
+
+  useEffect(() => {
+    const handler = (event: CustomEvent) => {
+      void novelUpdateHandlerRef.current(event);
+    };
+    eventDispatcher.on('novel-update', handler);
+    return () => eventDispatcher.off('novel-update', handler);
+  }, []);
 
   /**
    * Re-scan the given watched folders (the user's `autoImportFolders`) and
@@ -1389,10 +1500,20 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
   // The dialog fetches the chapter list and assembles the EPUB itself
   // (with its own progress/cancel UI) — from here on the built file takes
   // exactly the local-file import path, same as a clipped page.
-  const handleImportNovelFile = async (file: File) => {
+  const handleImportNovelFile = async (file: File, source?: NovelSourceRecord) => {
     setIsSelectMode(false);
     const groupId = searchParams?.get('group') || '';
-    await importBooks([{ file }], groupId);
+    const { importedBooks } = await importBooks([{ file }], groupId);
+    const book = importedBooks[0];
+    if (!book || !source || !appService) return;
+    try {
+      await saveNovelSource(novelSourceFsFromAppService(appService), source);
+      book.novelSourceUrl = source.canonicalUrl;
+      await updateBooks(envConfig, [book]);
+    } catch (err) {
+      // The book itself imported fine; only the update sidecar is missing.
+      console.error('Failed to save web-novel source:', err);
+    }
   };
 
   const handleImportPastedText = async (file: File) => {

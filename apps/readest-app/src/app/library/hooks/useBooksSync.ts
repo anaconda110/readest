@@ -79,7 +79,14 @@ export const useBooksSync = () => {
       // riding along in `metadata.absSource` (reconcileAbsBooks writes it) and
       // is rebuilt by transformBookFromDB. The strip below still applies to it:
       // the device-field convention holds, only the mirror crosses.
-      .map(({ filePath: _filePath, altFilePaths: _altFilePaths, ...rest }): Book => rest);
+      .map(
+        ({
+          filePath: _filePath,
+          altFilePaths: _altFilePaths,
+          novelSourceUrl: _source,
+          ...rest
+        }): Book => rest,
+      );
     return {
       books: newBooks,
       lastSyncedAt: lastSyncedAtBooks,
