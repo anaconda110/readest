@@ -2,7 +2,7 @@ import type { AppService } from '@/types/system';
 import type { DatabaseService, DatabaseRow } from '@/types/database';
 import { DEFAULT_STATS_TRACKING_CONFIG } from '@/types/statistics';
 import type { PageStatEvent, StatBook } from '@/types/statistics';
-import { toDateKey } from './readingStats';
+import { toDateKey, type BookQuarterHourDuration } from './readingStats';
 
 interface BookRow extends DatabaseRow {
   id: number;
@@ -15,7 +15,7 @@ interface BookRow extends DatabaseRow {
   pages: number;
 }
 
-type CursorKey = 'push' | 'pull' | 'bookorbit-push';
+type CursorKey = 'push' | 'pull' | 'bookorbit-push' | `grimmory-push:${string}`;
 
 interface ReadingEventRow extends DatabaseRow {
   id_book: number;
@@ -322,6 +322,21 @@ export class StatisticsDb {
     return [...totals]
       .sort(([a], [b]) => a - b)
       .map(([quarter, seconds]) => ({ quarter, seconds }));
+  }
+
+  /** Bounded month query shared by native Turso and browser WASM databases. */
+  async getBookQuarterHourDurations(
+    startTime: number,
+    endTime: number,
+  ): Promise<BookQuarterHourDuration[]> {
+    return this.db.select<BookQuarterHourDuration>(
+      `SELECT b.md5 AS bookMd5, b.title, b.authors,
+              p.start_time / 900 AS quarter, SUM(p.duration) AS seconds
+       FROM page_stat_data p JOIN book b ON b.id = p.id_book
+       WHERE p.start_time >= ? AND p.start_time < ? AND p.duration > 0
+       GROUP BY b.md5, b.title, b.authors, quarter ORDER BY quarter, b.md5`,
+      [startTime, endTime],
+    );
   }
 
   async getReadingTotals(): Promise<{ seconds: number; books: number; pages: number }> {

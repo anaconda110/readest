@@ -8,6 +8,7 @@ const db = vi.hoisted(() => ({
   open: vi.fn(),
   getReadingPeriodStats: vi.fn(),
   getReadingTotalsAndDaily: vi.fn(),
+  getBookQuarterHourDurations: vi.fn(),
   deleteBookRange: vi.fn(),
   undoDelete: vi.fn(),
 }));
@@ -41,6 +42,7 @@ beforeEach(() => {
     daily: [],
     totals: { seconds: 0, books: 0, pages: 0 },
   });
+  db.getBookQuarterHourDurations.mockResolvedValue([]);
   db.deleteBookRange.mockResolvedValue({
     bookMd5: 'book-a',
     originalEvents: [],
@@ -405,5 +407,50 @@ describe('ReadingStatsDialog', () => {
     expect(db.undoDelete).toHaveBeenCalledWith(deleted);
     expect(await screen.findByText('Deletion undone')).toBeTruthy();
     await waitFor(() => expect(db.getReadingTotalsAndDaily).toHaveBeenCalledTimes(3));
+  });
+
+  it('opens the calendar from a compact entry below the heatmap and returns to statistics', async () => {
+    const calendarQuery = vi.fn(async () => []);
+    db.getBookQuarterHourDurations.mockImplementation(calendarQuery);
+    await openDialog();
+    await screen.findByText('All Time');
+    expect(screen.queryByRole('group', { name: 'Reading Calendar' })).toBeNull();
+    const entry = screen.getByRole('button', { name: 'Reading Calendar' });
+    const heatmap = screen.getByRole('group', { name: 'Reading activity' });
+    expect(heatmap.compareDocumentPosition(entry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(calendarQuery).not.toHaveBeenCalled();
+
+    fireEvent.click(entry);
+    expect(await screen.findByRole('group', { name: 'Reading Calendar' })).toBeTruthy();
+    expect(screen.queryByText('All Time')).toBeNull();
+    expect(calendarQuery).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Reading Statistics' }));
+    expect(await screen.findByText('All Time')).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Reading Calendar' })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reading Calendar' }));
+  });
+
+  it('goes back to statistics, not out of the dialog, when closed from the calendar', async () => {
+    await openDialog();
+    fireEvent.click(await screen.findByRole('button', { name: 'Reading Calendar' }));
+    await screen.findByRole('group', { name: 'Reading Calendar' });
+
+    // Escape, the Android back key and the mobile header arrow all call Dialog's onClose.
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(await screen.findByText('All Time')).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Reading Calendar' })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reading Calendar' }));
+
+    // The mobile header arrow is named for what it does on each page.
+    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Reading Calendar' }));
+    await screen.findByRole('group', { name: 'Reading Calendar' });
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(await screen.findByText('All Time')).toBeTruthy();
+
+    const dialog = document.getElementById('reading_stats_window')!;
+    expect(dialog.hasAttribute('open')).toBe(true);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(dialog.hasAttribute('open')).toBe(false);
   });
 });

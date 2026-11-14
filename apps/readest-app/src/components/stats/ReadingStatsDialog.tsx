@@ -1,9 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
-import { MdChevronLeft, MdChevronRight, MdDeleteOutline, MdUndo } from 'react-icons/md';
+import {
+  MdCalendarMonth,
+  MdChevronLeft,
+  MdChevronRight,
+  MdDeleteOutline,
+  MdUndo,
+} from 'react-icons/md';
 import Dialog from '@/components/Dialog';
 import SegmentedControl from '@/components/SegmentedControl';
-import { BoxedList, SettingsRow } from '@/components/settings/primitives';
+import { BoxedList, NavigationRow, SettingsRow } from '@/components/settings/primitives';
+import SubPageHeader from '@/components/settings/SubPageHeader';
 import { useEnv } from '@/context/EnvContext';
 import { useAuth } from '@/context/AuthContext';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -25,6 +32,7 @@ import { formatDuration } from '@/utils/duration';
 import { getLocale } from '@/utils/misc';
 import ReadingTimeChart from './ReadingTimeChart';
 import ReadingHeatmap from './ReadingHeatmap';
+import ReadingCalendar from './ReadingCalendar';
 
 export const setReadingStatsDialogVisible = (visible: boolean) => {
   const dialog = document.getElementById('reading_stats_window');
@@ -67,7 +75,15 @@ const shiftPeriod = (range: ReadingRange, date: Date, delta: number) => {
 
 const titleOf = (book: Pick<BookReadingRanking, 'title' | 'bookMd5'>) => book.title || book.bookMd5;
 
-const ReadingStatsContent: React.FC = () => {
+interface ReadingStatsContentProps {
+  showCalendar: boolean;
+  onShowCalendar: (visible: boolean) => void;
+}
+
+const ReadingStatsContent: React.FC<ReadingStatsContentProps> = ({
+  showCalendar,
+  onShowCalendar,
+}) => {
   const _ = useTranslation();
   const { appService } = useEnv();
   const { user } = useAuth();
@@ -84,6 +100,19 @@ const ReadingStatsContent: React.FC = () => {
   const [actionNotice, setActionNotice] = useState<'deleted' | 'undone' | 'error' | null>(null);
   const dbRef = useRef<StatisticsDb | null>(null);
   const pulledRef = useRef(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const shownCalendar = useRef(showCalendar);
+
+  // Move focus only on navigation, not when the dialog first renders.
+  useEffect(() => {
+    if (shownCalendar.current === showCalendar) return;
+    shownCalendar.current = showCalendar;
+    const target = contentRef.current?.querySelector<HTMLElement>(
+      showCalendar ? '[data-calendar-heading]' : '[data-setting-id="stats.readingCalendar"]',
+    );
+    target?.focus();
+    if (showCalendar) target?.scrollIntoView?.({ block: 'start' });
+  }, [showCalendar]);
 
   const bounds = getPeriodBounds(range, anchorDate);
   const periodStart = bounds.start.getTime() / 1000;
@@ -262,13 +291,14 @@ const ReadingStatsContent: React.FC = () => {
   // Never pair a newly selected period with data loaded for the previous one,
   // but keep the period controls in place and make the reload explicit.
   if (
+    !statisticsDb ||
     !allTimeStats ||
     !periodStats ||
     periodStats.periodStart !== periodStart ||
     periodStats.periodEnd !== periodEnd
   ) {
     return (
-      <div className='flex flex-col gap-6 pb-6'>
+      <div ref={contentRef} className='flex flex-col gap-6 pb-6'>
         {periodHeader}
         <div
           role='status'
@@ -288,6 +318,24 @@ const ReadingStatsContent: React.FC = () => {
   const days = (count: number) => _('{{count}} days', { count });
   const pages = (count: number) => _('{{count}} pages', { count });
   const isEmpty = summary.seconds === 0 && rankings.length === 0;
+
+  if (showCalendar) {
+    return (
+      <div ref={contentRef} className='pb-6'>
+        <div tabIndex={-1} data-calendar-heading className='outline-hidden'>
+          <SubPageHeader
+            parentLabel={_('Reading Statistics')}
+            currentLabel={_('Reading Calendar')}
+            description={_('See which books you read each day and for how long')}
+            onBack={() => onShowCalendar(false)}
+          />
+        </div>
+        <BoxedList innerClassName='px-2! py-3'>
+          <ReadingCalendar db={statisticsDb} daily={daily} />
+        </BoxedList>
+      </div>
+    );
+  }
 
   const groupedBreakdown = new Map<string, DailyBookBreakdown[]>();
   for (const row of breakdown) {
@@ -338,7 +386,7 @@ const ReadingStatsContent: React.FC = () => {
   };
 
   return (
-    <div className='flex flex-col gap-6 pb-6'>
+    <div ref={contentRef} className='flex flex-col gap-6 pb-6'>
       {periodHeader}
 
       <BoxedList title={_('Reading Time')} innerClassName='pe-4 py-4'>
@@ -472,8 +520,17 @@ const ReadingStatsContent: React.FC = () => {
         </div>
       )}
 
-      <BoxedList title={_('Activity')} innerClassName='pe-4 py-4'>
-        <ReadingHeatmap daily={daily} />
+      <BoxedList title={_('Activity')} innerClassName='pe-4 pt-4'>
+        <div className='pb-4'>
+          <ReadingHeatmap daily={daily} />
+        </div>
+        <NavigationRow
+          title={_('Reading Calendar')}
+          icon={MdCalendarMonth}
+          onClick={() => onShowCalendar(true)}
+          data-setting-id='stats.readingCalendar'
+          className='pe-0 text-start'
+        />
       </BoxedList>
       <BoxedList title={_('Overview')}>
         <SettingsRow label={_('Today')}>
@@ -504,10 +561,12 @@ const ReadingStatsContent: React.FC = () => {
 export const ReadingStatsDialog: React.FC = () => {
   const _ = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
 
   useEffect(() => {
     const handleCustomEvent = (event: CustomEvent) => {
       setIsOpen(event.detail.visible);
+      setShowCalendar(false);
     };
 
     const el = document.getElementById('reading_stats_window');
@@ -528,11 +587,14 @@ export const ReadingStatsDialog: React.FC = () => {
       isOpen={isOpen}
       title={_('Reading Statistics')}
       onClose={() => setIsOpen(false)}
+      onBack={showCalendar ? () => setShowCalendar(false) : undefined}
       useOverlayScroll
       boxClassName='sm:h-[85%]! sm:w-[560px]! sm:max-w-(--breakpoint-sm)!'
       contentClassName='px-4! sm:px-6!'
     >
-      {isOpen && <ReadingStatsContent />}
+      {isOpen && (
+        <ReadingStatsContent showCalendar={showCalendar} onShowCalendar={setShowCalendar} />
+      )}
     </Dialog>
   );
 };
