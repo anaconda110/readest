@@ -206,8 +206,8 @@ CrossPoint.registerPlugin(async (container, api) => {
 
   // Updates come from this fork's releases, like the KOReader plugin's:
   // latest.json names the version, and each release carries the plugin zip.
-  const LATEST_JSON = 'https://github.com/anaconda110/readest/releases/latest/download/latest.json';
-  const RELEASES = 'https://github.com/anaconda110/readest/releases/download';
+  const LATEST_JSON = 'https://github.com/anaconda110/moyue/releases/latest/download/latest.json';
+  const RELEASES = 'https://github.com/anaconda110/moyue/releases/download';
   // Firmware older than api.dir loads a plugin from /.crosspoint/plugins
   // before the other roots, so an update written there is the one it runs.
   const DIR = api.dir ?? `/.crosspoint/plugins/${api.name}`;

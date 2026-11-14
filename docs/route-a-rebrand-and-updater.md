@@ -16,7 +16,7 @@
 | OneDrive scheme | readest-onedrive:// | moyue-onedrive:// |
 | 书库 UTI | com.readest.books | app.moyue.books |
 | 书库 MIME | application/x-readest-books | application/x-moyue-books |
-| 更新源 | download.readest.com | github.com/anaconda110/readest Releases |
+| 更新源 | download.readest.com | github.com/anaconda110/moyue Releases |
 | 更新签名公钥 | 上游公钥 | 本 fork 新密钥 |
 | Windows 缩略图 CLSID | 与上游共用 | 独立 CLSID |
 | 相册名 / Audiobookshelf 客户端名 | Readest | Moyue |
@@ -36,7 +36,7 @@
 
 - `apps/readest-app/src-tauri/tauri.conf.json`
   - `plugins.updater.endpoints` 只保留：
-    `https://github.com/anaconda110/readest/releases/latest/download/latest.json`
+    `https://github.com/anaconda110/moyue/releases/latest/download/latest.json`
   - `plugins.updater.pubkey` 已替换为本 fork 公钥。
 - `apps/readest-app/src/services/constants.ts`
   - `READEST_UPDATER_FILE`、`READEST_CHANGELOG_FILE` 指向 fork 的 GitHub Release 资产。
@@ -81,7 +81,7 @@ gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/moyue-updater.key
 
 验收：
 
-- 安装上一版 `Moyue`，触发检查更新，确认下载地址是 `github.com/anaconda110/readest`。
+- 安装上一版 `Moyue`，触发检查更新，确认下载地址是 `github.com/anaconda110/moyue`。
 - 确认新版本安装成功，且不会再被官方 Readest 更新覆盖。
 - 在同时安装官方 Readest 的机器上，确认两个应用互不覆盖、深链各自路由。
 

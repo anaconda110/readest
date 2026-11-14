@@ -130,7 +130,7 @@ const OpenAnnotationLanding = () => {
               )}
             </p>
             <a
-              href='https://github.com/anaconda110/readest'
+              href='https://github.com/anaconda110/moyue'
               className='btn btn-ghost btn-block mt-6'
               rel='noopener'
             >

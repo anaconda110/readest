@@ -57,11 +57,11 @@ pub fn handle_menu_event(app: &AppHandle, event: &MenuEvent) {
     if event.id() == "open_file" {
         handle_open_file(app);
     } else if event.id() == "privacy_policy" {
-        let _ = opener.open_url("https://github.com/anaconda110/readest#readme", None::<&str>);
+        let _ = opener.open_url("https://github.com/anaconda110/moyue#readme", None::<&str>);
     } else if event.id() == "report_issue" {
-        let _ = opener.open_url("https://github.com/anaconda110/readest/issues", None::<&str>);
+        let _ = opener.open_url("https://github.com/anaconda110/moyue/issues", None::<&str>);
     } else if event.id() == "moyue_help" {
-        let _ = opener.open_url("https://github.com/anaconda110/readest#readme", None::<&str>);
+        let _ = opener.open_url("https://github.com/anaconda110/moyue#readme", None::<&str>);
     }
 }
 

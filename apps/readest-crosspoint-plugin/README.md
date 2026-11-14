@@ -26,7 +26,7 @@ for [CrossPoint](https://github.com/crosspoint-reader/crosspoint-reader) e-reade
 ## Install
 
 Download `Readest-<version>.crosspoint-plugin.zip` from the
-[latest fork release](https://github.com/anaconda110/readest/releases/latest)
+[latest fork release](https://github.com/anaconda110/moyue/releases/latest)
 and unzip it. Copy the `readest/` folder to the SD card as
 `/.crosspoint/plugins/readest/` (or `/plugins/readest/`), then restart the
 reader.

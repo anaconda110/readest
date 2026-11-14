@@ -130,7 +130,7 @@ pub async fn update_book_presence(
 
     let button = activity::Button::new(
         "Read on Moyue",
-        "https://github.com/anaconda110/readest",
+        "https://github.com/anaconda110/moyue",
     );
     activity_builder = activity_builder.buttons(vec![button]);
 

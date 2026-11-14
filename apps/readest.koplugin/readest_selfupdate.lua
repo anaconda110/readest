@@ -9,10 +9,10 @@ local _ = require("readest_i18n")
 local SelfUpdate = {}
 
 local UPDATE_URLS = {
-    "https://github.com/anaconda110/readest/releases/latest/download/latest.json",
+    "https://github.com/anaconda110/moyue/releases/latest/download/latest.json",
 }
 local DOWNLOAD_URLS = {
-    "https://github.com/anaconda110/readest/releases/download/%s/Readest-%s-1.koplugin.zip",
+    "https://github.com/anaconda110/moyue/releases/download/%s/Readest-%s-1.koplugin.zip",
 }
 
 function SelfUpdate:compareVersions(v1, v2)

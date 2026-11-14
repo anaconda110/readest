@@ -42,8 +42,8 @@ const KEY = { access_token: 'device-key', token_type: 'bearer', id: 'new-key-id'
 // This fork's releases, as the release job publishes them: latest.json names the
 // version and each release carries the plugin zip, which holds the readest/
 // folder that goes on the SD card.
-const LATEST_JSON = 'https://github.com/anaconda110/readest/releases/latest/download/latest.json';
-const RELEASES = 'https://github.com/anaconda110/readest/releases/download';
+const LATEST_JSON = 'https://github.com/anaconda110/moyue/releases/latest/download/latest.json';
+const RELEASES = 'https://github.com/anaconda110/moyue/releases/download';
 const ZIP_BYTES = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
 const RELEASE_ZIP: Record<string, string | null> = {
   'readest/': null,

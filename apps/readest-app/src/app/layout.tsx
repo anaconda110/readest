@@ -29,7 +29,7 @@ export const metadata: Metadata = {
   authors: [
     {
       name: 'moyue',
-      url: 'https://github.com/anaconda110/readest',
+      url: 'https://github.com/anaconda110/moyue',
     },
   ],
   icons: {

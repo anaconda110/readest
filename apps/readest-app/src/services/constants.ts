@@ -989,7 +989,7 @@ export const CJK_FONTS_PATTENS = new RegExp(
 
 export const BOOK_IDS_SEPARATOR = '+';
 
-export const DOWNLOAD_READEST_URL = 'https://github.com/anaconda110/readest/releases/latest';
+export const DOWNLOAD_READEST_URL = 'https://github.com/anaconda110/moyue/releases/latest';
 
 export const READEST_WEB_BASE_URL = 'https://web.readest.com';
 export const READEST_NODE_BASE_URL = 'https://node.readest.com';
@@ -1018,9 +1018,8 @@ export const SHARE_CFI_MAX_LENGTH = 512;
 // This fork publishes stable updates to its own GitHub Releases. The release
 // workflow uploads `latest.json` and `release-notes.json` alongside the signed
 // installers, so no upstream Readest infrastructure is involved.
-const LATEST_DOWNLOAD_BASE_URL = 'https://github.com/anaconda110/readest/releases/latest/download';
-const NIGHTLY_DOWNLOAD_BASE_URL =
-  'https://github.com/anaconda110/readest/releases/download/nightly';
+const LATEST_DOWNLOAD_BASE_URL = 'https://github.com/anaconda110/moyue/releases/latest/download';
+const NIGHTLY_DOWNLOAD_BASE_URL = 'https://github.com/anaconda110/moyue/releases/download/nightly';
 
 export const READEST_UPDATER_FILE = `${LATEST_DOWNLOAD_BASE_URL}/latest.json`;
 

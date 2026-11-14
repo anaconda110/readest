@@ -55,7 +55,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const response = await publicFetch(currentUrl, {
         signal: controller.signal,
         headers: {
-          'User-Agent': 'MoyueBot/1.0 (+https://github.com/anaconda110/readest)',
+          'User-Agent': 'MoyueBot/1.0 (+https://github.com/anaconda110/moyue)',
         },
       });
       if (response.status >= 300 && response.status < 400) {
