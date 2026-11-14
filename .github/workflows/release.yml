@@ -309,6 +309,7 @@ jobs:
 
   build-tauri:
     needs: get-release
+    environment: release
     permissions:
       contents: write
       # Required by actions/attest-build-provenance: id-token mints the Sigstore
@@ -733,6 +734,7 @@ jobs:
   update-android-latest-json:
     needs: [get-release, build-tauri]
     if: ${{ !cancelled() }}
+    environment: release
     permissions:
       contents: write
     runs-on: ubuntu-latest
